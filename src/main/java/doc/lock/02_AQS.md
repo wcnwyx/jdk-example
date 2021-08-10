@@ -45,7 +45,12 @@
  * one of these modes, but both can come into play for example in a
  * {@link ReadWriteLock}. Subclasses that support only exclusive or
  * only shared modes need not define the methods supporting the unused mode.
- * 此类支持默认的独占模式和共享模式。
+ * 此类支持默认的独占模式和共享模式。在独占模式下获取时，其他线程尝试的获取无法成功。
+ * 多线程获取共享模式可能（但不需要）成功。此类不理解这些差异，除了机械意义上的差异，
+ * 即当共享模式获取成功时，下一个等待线程（如果存在）还必须确定它是否也可以获取。
+ * 在不同模式下等待的线程共享相同的FIFO队列。通常，实现子类只支持其中一种模式，
+ * 但这两种模式都可以在{@link ReadWriteLock}中发挥作用。
+ * 仅支持独占或共享模式的子类不需要定义支持未使用模式的方法。
  *
  * <p>This class defines a nested {@link ConditionObject} class that
  * can be used as a {@link Condition} implementation by subclasses
@@ -59,18 +64,29 @@
  * condition, so if this constraint cannot be met, do not use it.  The
  * behavior of {@link ConditionObject} depends of course on the
  * semantics of its synchronizer implementation.
+ * 该类定义了一个嵌套的 ConditionObject 类，该类可用作支持独占模式的子类的 ConditionObject 实现，
+ * 方法 isHeldExclusively 报告是否对当前线程独占保持同步，
+ * 使用当前 getState 的值调用方法 release 完全释放此对象，
+ * 并且 acquire 给定此保存的状态值，最终将此对象恢复到以前获取的状态。
+ * 没有{@code AbstractQueuedSynchronizer}方法会创建这样的 Condition ，
+ * 因此如果无法满足此约束，请不要使用它。 ConditionObject 的行为当然取决于其同步器实现的语义。
  *
  * <p>This class provides inspection, instrumentation, and monitoring
  * methods for the internal queue, as well as similar methods for
  * condition objects. These can be exported as desired into classes
  * using an {@code AbstractQueuedSynchronizer} for their
  * synchronization mechanics.
+ * 
+ * 此类提供内部队列的检查、检测和监视方法，以及条件对象的类似方法。
+ * 可以根据需要使用{@code AbstractQueuedSynchronizer}作为同步机制将它们导出到类中。
  *
  * <p>Serialization of this class stores only the underlying atomic
  * integer maintaining state, so deserialized objects have empty
  * thread queues. Typical subclasses requiring serializability will
  * define a {@code readObject} method that restores this to a known
  * initial state upon deserialization.
+ * 此类的序列化只存储底层原子整数维护状态，因此反序列化对象具有空线程队列。
+ * 需要序列化的典型子类将定义一个 readObject 方法，该方法在反序列化时将其恢复到已知的初始状态。
  *
  * <h3>Usage</h3>
  *
@@ -78,6 +94,8 @@
  * following methods, as applicable, by inspecting and/or modifying
  * the synchronization state using {@link #getState}, {@link
  * #setState} and/or {@link #compareAndSetState}:
+ * 要将此类用作同步器的基础，请通过使用 getState 、 setState 和/或 compareAndSetState 
+ * 检查和/或修改同步状态，重新定义以下方法（如适用）：
  *
  * <ul>
  * <li> {@link #tryAcquire}
@@ -93,16 +111,22 @@
  * not block. Defining these methods is the <em>only</em> supported
  * means of using this class. All other methods are declared
  * {@code final} because they cannot be independently varied.
+ * 默认情况下，这些方法都会抛出 UnsupportedOperationException 。
+ * 这些方法的实现必须是内部线程安全的，并且通常应该是简短的，而不是阻塞的。
+ * 定义这些方法是使用此类的唯一受支持的方法。所有其他方法都声明为 final ，因为它们不能独立变化。
  *
  * <p>You may also find the inherited methods from {@link
  * AbstractOwnableSynchronizer} useful to keep track of the thread
  * owning an exclusive synchronizer.  You are encouraged to use them
  * -- this enables monitoring and diagnostic tools to assist users in
  * determining which threads hold locks.
+ * 您还可能发现从 AbstractOwnableSynchronizer 继承的方法对于跟踪拥有独占同步器的线程非常有用。
+ * 我们鼓励您使用它们 ——这使监视和诊断工具能够帮助用户确定哪些线程持有锁。
  *
  * <p>Even though this class is based on an internal FIFO queue, it
  * does not automatically enforce FIFO acquisition policies.  The core
  * of exclusive synchronization takes the form:
+ * 即使此类基于内部FIFO队列，它也不会自动强制执行FIFO获得策略。独占同步的核心采用以下形式：
  *
  * <pre>
  * Acquire:
@@ -117,6 +141,7 @@
  * </pre>
  *
  * (Shared mode is similar but may involve cascading signals.)
+ * （共享模式类似，但可能涉及级联信号。）
  *
  * <p id="barging">Because checks in acquire are invoked before
  * enqueuing, a newly acquiring thread may <em>barge</em> ahead of

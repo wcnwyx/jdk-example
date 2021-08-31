@@ -153,6 +153,12 @@
  * to return {@code false} if {@link #hasQueuedPredecessors} (a method
  * specifically designed to be used by fair synchronizers) returns
  * {@code true}.  Other variations are possible.
+ * 由于在排队之前调用了acquire中的签入，因此新的获取线程可能会在被阻塞和排队的其他线程之前退出。
+ * 但是，如果需要，您可以定义 tryAcquire 和/或 tryAcquireShared 
+ * 以通过内部调用一个或多个检查方法来禁用驳船，从而提供一个<em>公平的</em>FIFO获取顺序。
+ * 特别是，大多数公平同步器可以定义 tryAcquire 以返回 false ，
+ * 前提是 hasqueuedpredcessors （一种专门为公平同步器设计的方法）返回 true 。
+ * 其他变化也是可能的。
  *
  * <p>Throughput and scalability are generally highest for the
  * default barging (also known as <em>greedy</em>,
@@ -170,6 +176,9 @@
  * "fast-path" checks, possibly prechecking {@link #hasContended}
  * and/or {@link #hasQueuedThreads} to only do so if the synchronizer
  * is likely not to be contended.
+ * 默认驳船（也称为贪婪、放弃和避免护航）策略的吞吐量和可伸缩性通常最高。
+ * 虽然这不能保证公平或无饥饿，但允许较早排队的线程在稍后排队的线程之前重新调度，
+ * 并且每个重新调度都有一个针对传入线程的无偏见的成功机会。
  *
  * <p>This class provides an efficient and scalable basis for
  * synchronization in part by specializing its range of use to

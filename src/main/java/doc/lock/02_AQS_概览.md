@@ -263,7 +263,7 @@ public abstract class AbstractQueuedSynchronizer
      * If head exists, its waitStatus is guaranteed not to be
      * CANCELLED.
      * 等待队列的头节点，懒初始化。除了初始化，只有通过setHead方法来改变。
-     * Note：如果head已经存在，它的waitStatus必然不是CANCELLED。
+     * Note：如果head已经存在，它的waitStatus必然不是CANCELLED。Node为队列中的一个节点封装类，后续再详细看。
      */
     private transient volatile Node head;
 
@@ -336,10 +336,83 @@ public abstract class AbstractQueuedSynchronizer
             }
         }
     }
+
+    /**
+     * Creates and enqueues node for current thread and given mode.
+     * 为当前线程和给定模式来创建并排队节点。
+     * @param mode Node.EXCLUSIVE for exclusive, Node.SHARED for shared
+     * @return the new node
+     */
+    private Node addWaiter(Node mode) {
+        Node node = new Node(Thread.currentThread(), mode);
+        // Try the fast path of enq; backup to full enq on failure
+        Node pred = tail;
+        if (pred != null) {
+            //如果尾部不时null，则新节点加入链表。
+            node.prev = pred;
+            if (compareAndSetTail(pred, node)) {
+                pred.next = node;
+                return node;
+            }
+        }
+        enq(node);
+        return node;
+    }
+
+    /**
+     * Acquires in exclusive mode, ignoring interrupts.  Implemented
+     * by invoking at least once {@link #tryAcquire},
+     * returning on success.  Otherwise the thread is queued, possibly
+     * repeatedly blocking and unblocking, invoking {@link
+     * #tryAcquire} until success.  This method can be used
+     * to implement method {@link Lock#lock}.
+     * 以独占模式获取，忽略终端。通过调用至少一次tryAcquire来实现，并在成功时返回。
+     * 否则线程将排队，可能会重复阻塞和取消阻塞，调用tryAcquire，直到成功。
+     * 该方法可以用来实现Lock.lock
+     *
+     * @param arg the acquire argument.  This value is conveyed to
+     *        {@link #tryAcquire} but is otherwise uninterpreted and
+     *        can represent anything you like.
+     */
+    public final void acquire(int arg) {
+        if (!tryAcquire(arg) &&
+                acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            selfInterrupt();
+    }
+
+    /**
+     * Acquires in exclusive uninterruptible mode for thread already in
+     * queue. Used by condition wait methods as well as acquire.
+     *
+     * @param node the node
+     * @param arg the acquire argument
+     * @return {@code true} if interrupted while waiting
+     */
+    final boolean acquireQueued(final Node node, int arg) {
+        boolean failed = true;
+        try {
+            boolean interrupted = false;
+            for (;;) {
+                final Node p = node.predecessor();
+                if (p == head && tryAcquire(arg)) {
+                    setHead(node);
+                    p.next = null; // help GC
+                    failed = false;
+                    return interrupted;
+                }
+                if (shouldParkAfterFailedAcquire(p, node) &&
+                        parkAndCheckInterrupt())
+                    interrupted = true;
+            }
+        } finally {
+            if (failed)
+                cancelAcquire(node);
+        }
+    }
 }
 ```
 AbstractQueuedSynchronizer初步总结：
-1. 内部实现以来与一个FIFO的队列（双向链表），类里有head、tail两个变量的定义。
+1. 内部实现依赖于一个FIFO的队列（双向链表），类里有head、tail两个变量的定义。节点通过Node类来封装。
 2. 该类只是一个基础类，一个抽象类，只是提供了一个框架，该类是通过一个int类型的state来实现同步器。
 3. 子类必须是非公共内部帮助类，后续再看一些它的实现类。
 4. 此类支持独占模式和共享模式。例如ReentrantReadWriteLock

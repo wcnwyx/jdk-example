@@ -1,4 +1,60 @@
+##一：顶层抽象父类AbstractOwnableSynchronizer
+```java
+/**
+ * A synchronizer that may be exclusively owned by a thread.  This
+ * class provides a basis for creating locks and related synchronizers
+ * that may entail a notion of ownership.  The
+ * {@code AbstractOwnableSynchronizer} class itself does not manage or
+ * use this information. However, subclasses and tools may use
+ * appropriately maintained values to help control and monitor access
+ * and provide diagnostics.
+ * 可能被一个线程独占的同步器。此类提供了创建锁和相关同步器的基础，
+ * 这些锁和同步器可能包含所有权的概念。该类本身不管理或者使用这些信息。
+ * 但是，子类和工具可以使用适当维护的值来帮助控制和监视访问并提供诊断。
+ *
+ * @since 1.6
+ * @author Doug Lea
+ */
+public abstract class AbstractOwnableSynchronizer
+        implements java.io.Serializable {
 
+    /** Use serial ID even though all fields transient. */
+    private static final long serialVersionUID = 3737899427754241961L;
+
+    /**
+     * Empty constructor for use by subclasses.
+     */
+    protected AbstractOwnableSynchronizer() { }
+
+    /**
+     * The current owner of exclusive mode synchronization.
+	 * 独占模式同步的当前占有者（线程）。
+     */
+    private transient Thread exclusiveOwnerThread;
+
+    /**
+     * Sets the thread that currently owns exclusive access.
+     * A {@code null} argument indicates that no thread owns access.
+     * This method does not otherwise impose any synchronization or
+     * {@code volatile} field accesses.
+	 * 设置当前拥有独占访问权限的线程。null参数表明当前没有线程有用访问权限。
+	 * 此方法不会以其他方式强制任何同步或{@code volatile}字段访问
+     * @param thread the owner thread
+     */
+    protected final void setExclusiveOwnerThread(Thread thread) {
+        exclusiveOwnerThread = thread;
+    }
+
+    protected final Thread getExclusiveOwnerThread() {
+        return exclusiveOwnerThread;
+    }
+}
+```
+AbstractOwnableSynchronizer类总结：  
+1. 该类为AbstractQueuedSynchronizer的父类，作用也很简单，用于保存哪个线程当前占有该同步器。
+
+##二：AbstractQueuedSynchronizer
+先简单的看下大体框架，还有一些基础代码，后续通过实现类来细看。
 ```java
 /**
  * Provides a framework for implementing blocking locks and related
@@ -76,7 +132,7 @@
  * condition objects. These can be exported as desired into classes
  * using an {@code AbstractQueuedSynchronizer} for their
  * synchronization mechanics.
- * 
+ *
  * 此类提供内部队列的检查、检测和监视方法，以及条件对象的类似方法。
  * 可以根据需要使用{@code AbstractQueuedSynchronizer}作为同步机制将它们导出到类中。
  *
@@ -153,11 +209,11 @@
  * to return {@code false} if {@link #hasQueuedPredecessors} (a method
  * specifically designed to be used by fair synchronizers) returns
  * {@code true}.  Other variations are possible.
- * 由于在排队之前调用了acquire中的签入，因此新的获取线程可能会在被阻塞和排队的其他线程之前退出。
+ * 由于在排队之前调用了acquire，因此新的获取线程可能会在被阻塞和排队的其他线程之前退出。
  * 但是，如果需要，您可以定义 tryAcquire 和/或 tryAcquireShared 
- * 以通过内部调用一个或多个检查方法来禁用驳船，从而提供一个<em>公平的</em>FIFO获取顺序。
+ * 以通过内部调用一个或多个检查方法来禁用barging，从而提供一个<em>公平的</em>FIFO获取顺序。
  * 特别是，大多数公平同步器可以定义 tryAcquire 以返回 false ，
- * 前提是 hasqueuedpredcessors （一种专门为公平同步器设计的方法）返回 true 。
+ * 前提是 hasQueuedPredecessors （一种专门为公平同步器设计的方法）返回 true 。
  * 其他变化也是可能的。
  *
  * <p>Throughput and scalability are generally highest for the
@@ -188,113 +244,109 @@
  * {@link java.util.concurrent.atomic atomic} classes, your own custom
  * {@link java.util.Queue} classes, and {@link LockSupport} blocking
  * support.
- *
- * <h3>Usage Examples</h3>
- *
- * <p>Here is a non-reentrant mutual exclusion lock class that uses
- * the value zero to represent the unlocked state, and one to
- * represent the locked state. While a non-reentrant lock
- * does not strictly require recording of the current owner
- * thread, this class does so anyway to make usage easier to monitor.
- * It also supports conditions and exposes
- * one of the instrumentation methods:
- *
- *  <pre> {@code
- * class Mutex implements Lock, java.io.Serializable {
- *
- *   // Our internal helper class
- *   private static class Sync extends AbstractQueuedSynchronizer {
- *     // Reports whether in locked state
- *     protected boolean isHeldExclusively() {
- *       return getState() == 1;
- *     }
- *
- *     // Acquires the lock if state is zero
- *     public boolean tryAcquire(int acquires) {
- *       assert acquires == 1; // Otherwise unused
- *       if (compareAndSetState(0, 1)) {
- *         setExclusiveOwnerThread(Thread.currentThread());
- *         return true;
- *       }
- *       return false;
- *     }
- *
- *     // Releases the lock by setting state to zero
- *     protected boolean tryRelease(int releases) {
- *       assert releases == 1; // Otherwise unused
- *       if (getState() == 0) throw new IllegalMonitorStateException();
- *       setExclusiveOwnerThread(null);
- *       setState(0);
- *       return true;
- *     }
- *
- *     // Provides a Condition
- *     Condition newCondition() { return new ConditionObject(); }
- *
- *     // Deserializes properly
- *     private void readObject(ObjectInputStream s)
- *         throws IOException, ClassNotFoundException {
- *       s.defaultReadObject();
- *       setState(0); // reset to unlocked state
- *     }
- *   }
- *
- *   // The sync object does all the hard work. We just forward to it.
- *   private final Sync sync = new Sync();
- *
- *   public void lock()                { sync.acquire(1); }
- *   public boolean tryLock()          { return sync.tryAcquire(1); }
- *   public void unlock()              { sync.release(1); }
- *   public Condition newCondition()   { return sync.newCondition(); }
- *   public boolean isLocked()         { return sync.isHeldExclusively(); }
- *   public boolean hasQueuedThreads() { return sync.hasQueuedThreads(); }
- *   public void lockInterruptibly() throws InterruptedException {
- *     sync.acquireInterruptibly(1);
- *   }
- *   public boolean tryLock(long timeout, TimeUnit unit)
- *       throws InterruptedException {
- *     return sync.tryAcquireNanos(1, unit.toNanos(timeout));
- *   }
- * }}</pre>
- *
- * <p>Here is a latch class that is like a
- * {@link java.util.concurrent.CountDownLatch CountDownLatch}
- * except that it only requires a single {@code signal} to
- * fire. Because a latch is non-exclusive, it uses the {@code shared}
- * acquire and release methods.
- *
- *  <pre> {@code
- * class BooleanLatch {
- *
- *   private static class Sync extends AbstractQueuedSynchronizer {
- *     boolean isSignalled() { return getState() != 0; }
- *
- *     protected int tryAcquireShared(int ignore) {
- *       return isSignalled() ? 1 : -1;
- *     }
- *
- *     protected boolean tryReleaseShared(int ignore) {
- *       setState(1);
- *       return true;
- *     }
- *   }
- *
- *   private final Sync sync = new Sync();
- *   public boolean isSignalled() { return sync.isSignalled(); }
- *   public void signal()         { sync.releaseShared(1); }
- *   public void await() throws InterruptedException {
- *     sync.acquireSharedInterruptibly(1);
- *   }
- * }}</pre>
+ * 这个类为同步提供了一个高效且可扩展的基础，
+ * 部分是通过将其使用范围专门化为可以依赖于{@code int}状态、获取和释放参数以及内部FIFO等待队列的同步器。
+ * 当这还不够时，您可以使用atomic类、您自己的自定义Queue类和LockSupport阻塞支持从较低级别构建同步器。
+ * 
+ * 此处有两个示例，先不看，后续再看。
  *
  * @since 1.5
  * @author Doug Lea
  */
 public abstract class AbstractQueuedSynchronizer
-    extends AbstractOwnableSynchronizer
-    implements java.io.Serializable {
+        extends AbstractOwnableSynchronizer
+        implements java.io.Serializable {
 
     /**
+     * Head of the wait queue, lazily initialized.  Except for
+     * initialization, it is modified only via method setHead.  Note:
+     * If head exists, its waitStatus is guaranteed not to be
+     * CANCELLED.
+     * 等待队列的头节点，懒初始化。除了初始化，只有通过setHead方法来改变。
+     * Note：如果head已经存在，它的waitStatus必然不是CANCELLED。
+     */
+    private transient volatile Node head;
+
+    /**
+     * Tail of the wait queue, lazily initialized.  Modified only via
+     * method enq to add new wait node.
+     * 等待队列的尾部，懒初始化。只有通过enq方法添加新的等待节点来改变。
+     */
+    private transient volatile Node tail;
+
+    /**
+     * The synchronization state.
+     * 同步的状态
+     */
+    private volatile int state;
+
+    /**
+     * Atomically sets synchronization state to the given updated
+     * value if the current state value equals the expected value.
+     * This operation has memory semantics of a {@code volatile} read
+     * and write.
+     * 原子的在同步状态（state）等于期待值时更新为给定的值。
+     * 此操作具有volatile 读/写的内存语义。
+     * @param expect the expected value
+     * @param update the new value
+     * @return {@code true} if successful. False return indicates that the actual
+     *         value was not equal to the expected value.
+     */
+    protected final boolean compareAndSetState(int expect, int update) {
+        // See below for intrinsics setup to support this
+        return unsafe.compareAndSwapInt(this, stateOffset, expect, update);
+    }
+
+    /**
+     * CAS head field. Used only by enq.
+     */
+    private final boolean compareAndSetHead(Node update) {
+        return unsafe.compareAndSwapObject(this, headOffset, null, update);
+    }
+
+    /**
+     * CAS tail field. Used only by enq.
+     */
+    private final boolean compareAndSetTail(Node expect, Node update) {
+        return unsafe.compareAndSwapObject(this, tailOffset, expect, update);
+    }
+
+    /**
+     * Inserts node into queue, initializing if necessary. See picture above.
+     * 队列插入节点，必要时进行初始化。
+     * @param node the node to insert
+     * @return node's predecessor
+     */
+    private Node enq(final Node node) {
+        for (;;) {
+            Node t = tail;
+            if (t == null) { // Must initialize 如果尾部是空，则new 一个Node作为head和tail
+                if (compareAndSetHead(new Node()))
+                    tail = head;
+            } else {
+                //双向链表入链操作。 
+                // 1.新节点的前置节点设置为老的tail
+                // 2.将新节点通过CAS操作设置为新的tail
+                // 3.将老的tail的后续节点设置为新增的节点
+                node.prev = t;
+                if (compareAndSetTail(t, node)) {
+                    t.next = node;
+                    return t;
+                }
+            }
+        }
+    }
+}
+```
+AbstractQueuedSynchronizer初步总结：
+1. 内部实现以来与一个FIFO的队列（双向链表），类里有head、tail两个变量的定义。
+2. 该类只是一个基础类，一个抽象类，只是提供了一个框架，该类是通过一个int类型的state来实现同步器。
+3. 子类必须是非公共内部帮助类，后续再看一些它的实现类。
+4. 此类支持独占模式和共享模式。例如ReentrantReadWriteLock
+
+##三： AbstractQueuedSynchronizer.Node
+```java
+/**
      * Wait queue node class.
      * 等待队列节点类。
      *
@@ -312,14 +364,14 @@ public abstract class AbstractQueuedSynchronizer
      * first in the queue. But being first does not guarantee success;
      * it only gives the right to contend.  So the currently released
      * contender thread may need to rewait.
-     * 
-     * 等待队列是“CLH”（Craig、Landin和Hagersten）锁队列的变体。CLH锁通常用于旋转锁。
-     * 相反，我们使用它们来阻止同步器，但使用相同的基本策略，即在其节点的前一个线程中保存
+     *
+     * 等待队列是“CLH”（Craig、Landin和Hagersten）锁队列的变体。CLH锁通常用于自旋锁。
+     * 相反，我们使用它们来替代阻塞同步器，但使用相同的基本策略，即在其节点的前一个线程中保存
      * 一些关于该线程的控制信息。每个节点中的“状态”字段跟踪线程是否应该阻塞。
      * 节点在其前一个节点释放时发出信号。队列的每个节点都充当一个特定的通知样式监视器，
      * 其中包含一个等待线程。但是status字段不控制线程是否被授予锁等。如果线程是队列中的第一个线程，
-     * 它可能会尝试获取。但第一并不能保证成功；它只给了我们竞争的权利。因此，当前释放的竞争者线程可能需要重新等待。
-     * 
+     * 它可能会尝试获取。但第一并不能保证成功；它只给了竞争的权利。因此，当前释放的竞争者线程可能需要重新等待。
+     *
      * <p>To enqueue into a CLH lock, you atomically splice it in as new
      * tail. To dequeue, you just set the head field.
      * 要排队进入CLH锁，您可以将其作为新的尾部进行原子拼接。要退出队列，只需设置head字段。
@@ -349,7 +401,7 @@ public abstract class AbstractQueuedSynchronizer
      * "prev"链接（未在原始CLH锁中使用）主要用于处理取消。如果节点被取消，
      * 其后续节点（通常）将重新链接到未取消的前置节点。有关自旋锁的类似力学解释，
      * 请参阅Scott和Scherer在http://www.cs.rochester.edu/u/scott/synchronization/
-     * 
+     *
      * <p>We also use "next" links to implement blocking mechanics.
      * The thread id for each node is kept in its own node, so a
      * predecessor signals the next node to wake up by traversing
@@ -373,12 +425,18 @@ public abstract class AbstractQueuedSynchronizer
      * successors upon cancellation, allowing them to stabilize on
      * a new predecessor, unless we can identify an uncancelled
      * predecessor who will carry this responsibility.
+     * 取消为基本算法引入了一些保守性。因为我们必须轮询其他节点的取消，
+     * 所以我们可能会忽略已取消的节点是在我们前面还是后面。
+     * 这是通过在撤销时始终取消继承人资格来解决的，允许他们稳定在新的前任上，
+     * 除非我们能够确定一个未被撤销的前任将承担这一责任。
      *
      * <p>CLH queues need a dummy header node to get started. But
      * we don't create them on construction, because it would be wasted
      * effort if there is never contention. Instead, the node
      * is constructed and head and tail pointers are set upon first
      * contention.
+     * CLH队列需要一个虚拟的头结点来启动。但是我们不在构造方法中创建他们，
+     * 因为如果没有竞争，这将是徒劳的。相反，在第一次争用时构造节点并设置头指针和尾指针。
      *
      * <p>Threads waiting on Conditions use the same nodes, but
      * use an additional link. Conditions only need to link nodes
@@ -387,6 +445,8 @@ public abstract class AbstractQueuedSynchronizer
      * inserted into a condition queue.  Upon signal, the node is
      * transferred to the main queue.  A special value of status
      * field is used to mark which queue a node is on.
+     * 等待条件（Conditions）的线程使用相同的节点，但是使用一个额外的连接。
+     * 条件（Conditions）只需要链接简单（非并发）链接队列中的节点，因为它们仅在独占持有时才被访问
      *
      * <p>Thanks go to Dave Dice, Mark Moir, Victor Luchangco, Bill
      * Scherer and Michael Scott, along with members of JSR-166
@@ -420,30 +480,44 @@ public abstract class AbstractQueuedSynchronizer
          *               first indicate they need a signal,
          *               then retry the atomic acquire, and then,
          *               on failure, block.
+         *               该节点的后置节点当前是（或者即将）阻塞（通过park），
+         *               所以当前节点必须在释放或者取消时unpark其后置节点。
+         *               为了避免竞争，acquire方法必须首先指示它们需要信号，
+         *               然后重试原子acquire，然后在失败时阻塞。
          *   CANCELLED:  This node is cancelled due to timeout or interrupt.
          *               Nodes never leave this state. In particular,
          *               a thread with cancelled node never again blocks.
+         *               该节点由于超市或者中断已经被取消。节点永远不会再离开该状态。
+         *               已取消节点的线程永远不会再阻塞。
          *   CONDITION:  This node is currently on a condition queue.
          *               It will not be used as a sync queue node
          *               until transferred, at which time the status
          *               will be set to 0. (Use of this value here has
          *               nothing to do with the other uses of the
          *               field, but simplifies mechanics.)
+         *               该节点目前处于条件队列中。在转变之前，它将不会用作同步队列节点，
+         *               此时状态将设置为0。（这里使用该值与字段的其他用途无关，但简化了机制）
          *   PROPAGATE:  A releaseShared should be propagated to other
          *               nodes. This is set (for head node only) in
          *               doReleaseShared to ensure propagation
          *               continues, even if other operations have
          *               since intervened.
+         *               releaseShared应传播到其他节点。这是在doReleaseShared中设置的（仅针对头部节点），
+         *               以确保传播继续进行，即使其他操作已经介入
          *   0:          None of the above
          *
          * The values are arranged numerically to simplify use.
          * Non-negative values mean that a node doesn't need to
          * signal. So, most code doesn't need to check for particular
          * values, just for sign.
+         * 这些值使用数字形式排列，以方便使用。非负值意味着这个节点不需要发信号。
+         * 大多数代码不需要检查特定值，只需要检查符号。
          *
          * The field is initialized to 0 for normal sync nodes, and
          * CONDITION for condition nodes.  It is modified using CAS
          * (or when possible, unconditional volatile writes).
+         * 对于普通的同步节点该值初始为0，条件节点初始为CONDITION。
+         * 使用CAS（或在可能的情况下，使用无条件易失性写入）对其进行修改。
          */
         volatile int waitStatus;
 
@@ -457,6 +531,11 @@ public abstract class AbstractQueuedSynchronizer
          * head only as a result of successful acquire. A
          * cancelled thread never succeeds in acquiring, and a thread only
          * cancels itself, not any other node.
+         * 链接到当前 节点/线程 所依赖的前置节点用于检测 waitStatus。
+         * 在排队过程中分配，并且仅在退出队列时取消（为了GC）。
+         * 此外，在取消前一个节点时，我们会在查找未取消的前一个节点时短路，
+         * 因为头部节点从未取消，所以该前一个节点将始终存在：节点仅在成功获取后才成为头部。
+         * 被取消的线程永远不会成功获取，线程只会取消自身，而不会取消任何其他节点。
          */
         volatile Node prev;
 
@@ -472,12 +551,18 @@ public abstract class AbstractQueuedSynchronizer
          * double-check.  The next field of cancelled nodes is set to
          * point to the node itself instead of null, to make life
          * easier for isOnSyncQueue.
+         * 链接到后续节点，当前节点/线程在释放时将对其进行unparks。
+         * 在排队过程中分配，在绕过已取消的前置时进行调整，在退出队列时取消（为了GC）。
+         * enq操作直到连接之后才分配前置的next字段，所以看到字段next为空时并不一定意味着节点在队列的末尾。
+         * 但是，如果next字段显示为空，我们可以从尾部扫描上一个字段以进行双重检查。
+         * 取消节点的next字段设置为指向节点本身，而不是null，以使isOnSyncQueue的工作更轻松。
          */
         volatile Node next;
 
         /**
          * The thread that enqueued this node.  Initialized on
          * construction and nulled out after use.
+         * 使此节点排队的线程。构造时初始化，使用后置空。
          */
         volatile Thread thread;
 
@@ -490,11 +575,17 @@ public abstract class AbstractQueuedSynchronizer
          * re-acquire. And because conditions can only be exclusive,
          * we save a field by using special value to indicate shared
          * mode.
+         * 链接到下一个等待着条件（condition）的节点，或者特殊的值 SHARED。
+         * 因为只有在独占模式下保持时才访问条件队列，
+         * 所以我们只需要一个简单的链接队列来保持节点在等待条件时的状态。
+         * 然后将它们转移到队列中以重新获取。
+         * 由于条件只能是独占的，我们通过使用特殊值保存字段来表示共享模式。
          */
         Node nextWaiter;
 
         /**
          * Returns true if node is waiting in shared mode.
+         * 如果节点是在共享模式下等待则返回true
          */
         final boolean isShared() {
             return nextWaiter == SHARED;
@@ -504,6 +595,8 @@ public abstract class AbstractQueuedSynchronizer
          * Returns previous node, or throws NullPointerException if null.
          * Use when predecessor cannot be null.  The null check could
          * be elided, but is present to help the VM.
+         * 返回前置节点，如果前置节点为空则抛出NullPointerException。
+         * 当前置节点不为空时使用。可以省略空检查，但它的存在是为了帮助VM
          *
          * @return the predecessor of this node
          */
@@ -528,6 +621,7 @@ public abstract class AbstractQueuedSynchronizer
             this.thread = thread;
         }
     }
-
-}
 ```
+AbstractQueuedSynchronizer.Node总结：  
+1. Node即为AQS队列中的节点信息封装类，节点内存有prev和next节点属性，所以是一个双向链表。
+2. node内部存着当前节点的Thread信息。

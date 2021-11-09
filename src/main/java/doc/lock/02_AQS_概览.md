@@ -348,7 +348,7 @@ public abstract class AbstractQueuedSynchronizer
         // Try the fast path of enq; backup to full enq on failure
         Node pred = tail;
         if (pred != null) {
-            //如果尾部不时null，则新节点加入链表。
+            //如果尾部不是null，则新节点加入链表。
             node.prev = pred;
             if (compareAndSetTail(pred, node)) {
                 pred.next = node;
@@ -366,7 +366,7 @@ public abstract class AbstractQueuedSynchronizer
      * repeatedly blocking and unblocking, invoking {@link
      * #tryAcquire} until success.  This method can be used
      * to implement method {@link Lock#lock}.
-     * 以独占模式获取，忽略终端。通过调用至少一次tryAcquire来实现，并在成功时返回。
+     * 以独占模式获取，忽略中断。通过调用至少一次tryAcquire来实现，并在成功时返回。
      * 否则线程将排队，可能会重复阻塞和取消阻塞，调用tryAcquire，直到成功。
      * 该方法可以用来实现Lock.lock
      *
@@ -383,7 +383,7 @@ public abstract class AbstractQueuedSynchronizer
     /**
      * Acquires in exclusive uninterruptible mode for thread already in
      * queue. Used by condition wait methods as well as acquire.
-     *
+     * 已在队列中的线程以独占不间断模式获取。用于条件等待方法和获取。
      * @param node the node
      * @param arg the acquire argument
      * @return {@code true} if interrupted while waiting

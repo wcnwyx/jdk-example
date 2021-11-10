@@ -1,5 +1,6 @@
 package com.wcn.jdk.example.lock;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class ReentrantLockTest {
@@ -13,7 +14,7 @@ public class ReentrantLockTest {
                     lock.lock();
                     System.out.println("thread1 lock success.");
                     Thread.sleep(5*1000);
-                } catch (InterruptedException e) {
+                } catch (Exception e) {
                     e.printStackTrace();
                 }finally {
                     lock.unlock();
@@ -27,8 +28,23 @@ public class ReentrantLockTest {
                     System.out.println("thread2 lock begin.");
                     lock.lock();
                     System.out.println("thread2 lock success.");
-                    Thread.sleep(Integer.MAX_VALUE);
-                } catch (InterruptedException e) {
+//                    Thread.sleep(Integer.MAX_VALUE);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }finally {
+                    lock.unlock();
+                }
+            }
+        });
+        Thread thread3 = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    System.out.println("thread3 lock begin.");
+                    lock.lock();
+                    System.out.println("thread3 lock success.");
+//                    Thread.sleep(Integer.MAX_VALUE);
+                } catch (Exception e) {
                     e.printStackTrace();
                 }finally {
                     lock.unlock();
@@ -37,12 +53,20 @@ public class ReentrantLockTest {
         });
         thread1.setName("thread1");
         thread2.setName("thread2");
+        thread3.setName("thread3");
         thread1.start();
         try {
-            Thread.sleep(3*1000);
+            Thread.sleep(1*1000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
         thread2.start();
+        try {
+            Thread.sleep(1*1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        thread3.start();
     }
+
 }

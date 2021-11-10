@@ -61,5 +61,5 @@ Mutex总结：
     2.1 tryLock方法通过syn.tryAcquire(1)方法来获取锁，将state通过ACS方法从0改为1即可。
     2.2 unlock方法通过syn.release(1)方法来释放，最终调用tryRelease(1)将state设置为0。
 3. Nutex是不可重入的，因为一个线程再第一次获取锁后，第二次再去获取锁时，此时state已经为1，tryAcquire方法中将state通过ACS方法从0改为1就会失败。
-4. 问题：这里其实只是体现出了state的用法，但是AQS里面的队列其实没有体现出来，下面继续看。
+4. 问题：这里其实只是体现出了state的用法，但是AQS里面的队列其实没有体现出来，后续通过ReentrantLock来看更多的操作。
 

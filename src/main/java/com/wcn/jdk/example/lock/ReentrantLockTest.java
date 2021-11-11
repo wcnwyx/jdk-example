@@ -17,7 +17,9 @@ public class ReentrantLockTest {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }finally {
+                    System.out.println("thread1 unlock begin.");
                     lock.unlock();
+                    System.out.println("thread1 unlock success.");
                 }
             }
         });
@@ -32,7 +34,9 @@ public class ReentrantLockTest {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }finally {
+                    System.out.println("thread2 unlock begin.");
                     lock.unlock();
+                    System.out.println("thread2 unlock success.");
                 }
             }
         });
@@ -47,7 +51,9 @@ public class ReentrantLockTest {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }finally {
+                    System.out.println("thread3 unlock begin.");
                     lock.unlock();
+                    System.out.println("thread3 unlock success.");
                 }
             }
         });

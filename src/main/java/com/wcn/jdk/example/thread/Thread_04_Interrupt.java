@@ -1,9 +1,11 @@
 package com.wcn.jdk.example.thread;
 
+import java.util.concurrent.locks.LockSupport;
+
 public class Thread_04_Interrupt {
     public static void main(String[] args) throws InterruptedException {
-        testInterruptNone();
-//        testInterruptSleepWaitJoin();
+//        testInterruptNone();
+        testInterruptSleepWaitJoin();
     }
 
     /**
@@ -67,17 +69,26 @@ public class Thread_04_Interrupt {
                 } catch (InterruptedException e) {
                     System.out.println("从join中被中断");
                 }
+
+                System.out.println("进入park");
+                //第一次park不会将线程阻塞，因为前面有interrupt操作将permit置位了1，导致不起作用
+                LockSupport.park();
+                LockSupport.park();//park中断不会抛出InterruptedException
+                System.out.println("从park中被中断");
                 System.out.println("线程执行完毕");
+
             }
         });
 
         thread1.start();
         thread2.start();
-        Thread.sleep(500);
-        thread2.interrupt();
-        Thread.sleep(500);
-        thread2.interrupt();
-        Thread.sleep(500);
-        thread2.interrupt();
+        Thread.sleep(1000);
+        thread2.interrupt();//sleep
+        Thread.sleep(1000);
+        thread2.interrupt();//wait
+        Thread.sleep(1000);
+        thread2.interrupt();//join
+        Thread.sleep(1000);
+        thread2.interrupt();//park
     }
 }

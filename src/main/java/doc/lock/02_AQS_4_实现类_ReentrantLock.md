@@ -320,6 +320,17 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             return false;
         }
     }
+
+    public boolean tryLock(long timeout, TimeUnit unit)
+            throws InterruptedException {
+        //通过AQS来实现
+        return sync.tryAcquireNanos(1, unit.toNanos(timeout));
+    }
+
+    public void lockInterruptibly() throws InterruptedException {
+        //通过AQS来实现
+        sync.acquireInterruptibly(1);
+    }
 }
 ```
 总结：

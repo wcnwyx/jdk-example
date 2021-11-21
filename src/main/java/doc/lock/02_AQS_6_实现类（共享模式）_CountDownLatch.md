@@ -91,6 +91,9 @@
  * Executor.  When all sub-parts are complete, the coordinating thread
  * will be able to pass through await. (When threads must repeatedly
  * count down in this way, instead use a {@link CyclicBarrier}.)
+ * 另一个典型用法是将问题划分为N个部分，用一个Runnable描述每个部分，
+ * Runnable执行该部分并对闩锁进行倒计时，然后将所有Runnable排队给一个执行器。
+ * 当所有子部件完成时，协调线程将能够通过等待。（当线程必须以这种方式重复倒计时时，请改用{@link CyclicBarrier}。）
  *
  *  <pre> {@code
  * class Driver2 { // ...
@@ -176,18 +179,22 @@ public class CountDownLatch {
     /**
      * Causes the current thread to wait until the latch has counted down to
      * zero, unless the thread is {@linkplain Thread#interrupt interrupted}.
+     * 导致当前线程等待锁计数倒计时到零，除非该线程为 interrupted 。
      *
      * <p>If the current count is zero then this method returns immediately.
+     * 如果当前计数器时0则该方法会立即返回。
      *
      * <p>If the current count is greater than zero then the current
      * thread becomes disabled for thread scheduling purposes and lies
      * dormant until one of two things happen:
+     * 如果当前计数大于零，则出于线程调度目的，当前线程将被禁用，并处于休眠状态，直到发生以下两种情况之一：
      * <ul>
      * <li>The count reaches zero due to invocations of the
      * {@link #countDown} method; or
      * <li>Some other thread {@linkplain Thread#interrupt interrupts}
      * the current thread.
      * </ul>
+     * 计数通过调用countDown方法达到0；或者其他线程中断当前线程。
      *
      * <p>If the current thread:
      * <ul>
@@ -196,6 +203,9 @@ public class CountDownLatch {
      * </ul>
      * then {@link InterruptedException} is thrown and the current thread's
      * interrupted status is cleared.
+     * 如果当前线程：
+     *      在进入该方法时已经有中断状态了；或者时在等待中被中断，则会抛出InterruptedException
+     *      异常，并清除当前线程的中断状态。
      *
      * @throws InterruptedException if the current thread is interrupted
      *         while waiting
@@ -205,60 +215,17 @@ public class CountDownLatch {
     }
 
     /**
-     * Causes the current thread to wait until the latch has counted down to
-     * zero, unless the thread is {@linkplain Thread#interrupt interrupted},
-     * or the specified waiting time elapses.
-     *
-     * <p>If the current count is zero then this method returns immediately
-     * with the value {@code true}.
-     *
-     * <p>If the current count is greater than zero then the current
-     * thread becomes disabled for thread scheduling purposes and lies
-     * dormant until one of three things happen:
-     * <ul>
-     * <li>The count reaches zero due to invocations of the
-     * {@link #countDown} method; or
-     * <li>Some other thread {@linkplain Thread#interrupt interrupts}
-     * the current thread; or
-     * <li>The specified waiting time elapses.
-     * </ul>
-     *
-     * <p>If the count reaches zero then the method returns with the
-     * value {@code true}.
-     *
-     * <p>If the current thread:
-     * <ul>
-     * <li>has its interrupted status set on entry to this method; or
-     * <li>is {@linkplain Thread#interrupt interrupted} while waiting,
-     * </ul>
-     * then {@link InterruptedException} is thrown and the current thread's
-     * interrupted status is cleared.
-     *
-     * <p>If the specified waiting time elapses then the value {@code false}
-     * is returned.  If the time is less than or equal to zero, the method
-     * will not wait at all.
-     *
-     * @param timeout the maximum time to wait
-     * @param unit the time unit of the {@code timeout} argument
-     * @return {@code true} if the count reached zero and {@code false}
-     *         if the waiting time elapsed before the count reached zero
-     * @throws InterruptedException if the current thread is interrupted
-     *         while waiting
-     */
-    public boolean await(long timeout, TimeUnit unit)
-        throws InterruptedException {
-        return sync.tryAcquireSharedNanos(1, unit.toNanos(timeout));
-    }
-
-    /**
      * Decrements the count of the latch, releasing all waiting threads if
      * the count reaches zero.
+     * 减少该latch的计数，当计数达到0时，释放所有等待的线程。
      *
      * <p>If the current count is greater than zero then it is decremented.
      * If the new count is zero then all waiting threads are re-enabled for
      * thread scheduling purposes.
+     * 如果当前计数大于0则将它递减。如果新的计数时0则处于线程调度目的所有等待的线程将重新可用。
      *
      * <p>If the current count equals zero then nothing happens.
+     * 如果当前计数等于0则什么都不发生。
      */
     public void countDown() {
         sync.releaseShared(1);
@@ -270,3 +237,14 @@ public class CountDownLatch {
 
 }
 ```
+总结：
+1. 基本用法，一个或多个线程await，然后等待计数减到0，到0时将所有等待中的线程唤醒。
+2. 只要count不为0，所有的tryAcquireShared就不会成功。
+3. 只要count没有减到0，所有的tryReleaseShared也不会成功，最后一个将count见到0的线程才成功，再执行doReleaseShared操作。
+4. 一个大任务分片处理，多个线程分片执行，都执行完了再继续。则是一个线程去wait，多个线程去countDown。
+  这种情况下不太能显示出共享模式的用法，只是最后一个countDown为0的线程会去release掉那一个wait的线程。没有体现出传播的特性。
+5. 还有一种用法是多个线程在wait，一个线程countDown后，所有wait的线程开始工作，这是就体现出了传播的特性。
+  多个线程wait的时候，AQS队列中会有多个节点，countDown后第一个节点会被head给unPark，这只是唤醒了一个线程，
+  其它几个线程可还在park中呢，第一个线程获取锁后，会通过setHeadAndPropagate方法将后面的一个唤醒，后面的再
+  通过setHeadAndPropagate将其后面的一个唤醒，依次逐个唤醒，就体现了传播的动作了。
+  

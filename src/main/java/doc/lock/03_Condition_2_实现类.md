@@ -1,4 +1,5 @@
-##该类为AQS的内部类
+##类ConditionObject，该类为AQS的内部类
+
 ```java
 
 public class ConditionObject implements Condition, java.io.Serializable {
@@ -108,6 +109,29 @@ public class ConditionObject implements Condition, java.io.Serializable {
         if (interruptMode != 0)
             reportInterruptAfterWait(interruptMode);
     }
-    
+
+    /**
+     * Invokes release with current state value; returns saved state.
+     * Cancels node and throws exception on failure.
+     * 使用当前state值调用release；返回保存的state。失败时取消节点并抛出异常。
+     * 
+     * @param node the condition node for this wait
+     * @return previous sync state
+     */
+    final int fullyRelease(Node node) {
+        boolean failed = true;
+        try {
+            int savedState = getState();
+            if (release(savedState)) {
+                failed = false;
+                return savedState;
+            } else {
+                throw new IllegalMonitorStateException();
+            }
+        } finally {
+            if (failed)
+                node.waitStatus = Node.CANCELLED;
+        }
+    }
 }
 ```

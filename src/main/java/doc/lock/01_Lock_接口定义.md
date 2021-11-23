@@ -1,3 +1,5 @@
+##Lock接口定义
+直接看官方注释就好。
 ```java
 /**
  * {@code Lock} implementations provide more extensive locking
@@ -27,7 +29,7 @@
  * order, and all locks must be released in the same lexical scope in which
  * they were acquired.
  * 
- * {@code synchronized}方法或语句的使用提供了对与每个对象关联的隐式监视器锁的访问，
+ * synchronized方法或语句的使用提供了对与每个对象关联的隐式监视器锁的访问，
  * 但强制所有锁的获取和释放以块结构的方式进行：当获取多个锁时，必须以相反的顺序释放它们，
  * 所有锁都必须在获取它们的相同词法范围内释放。
  *
@@ -47,7 +49,7 @@
  * 
  * 虽然 synchronized 方法和语句的作用域机制使使用监视器锁编程变得更加容易，
  * 并有助于避免许多涉及锁的常见编程错误，但在某些情况下，您需要以更灵活的方式使用锁。
- * 例如，一些用于遍历并发访问的数据结构的算法需要使用交锁或链锁：先获取节点A的锁，
+ * 例如，一些用于遍历并发访问的数据结构的算法需要使用交叉锁或链锁：先获取节点A的锁，
  * 然后获取节点B，然后释放A并获取C，然后释放B并获取D，依此类推。
  * Lock 接口的实现允许在不同的范围内获取和释放锁，并允许以任何顺序获取和释放多个锁，
  * 从而支持使用此类技术。
@@ -58,8 +60,8 @@
  * methods and statements. In most cases, the following idiom
  * should be used:
  * 
- * 随着灵活性的提高，还需要承担更多的责任。由于没有块结构锁，
- * 因此 synchronized 方法和语句会自动释放锁。在大多数情况下，应使用以下习语
+ * 随着灵活性的提高，还需要承担更多的责任。没有块结构的锁，
+ * 移除了synchronized方法和语句的自动释放。在大多数情况下，应使用以下习语
  *
  *  <pre> {@code
  * Lock l = ...;
@@ -164,7 +166,7 @@
  * 锁获取的三种形式（可中断、不可中断和定时）在性能特征、顺序保证或其他实现质量方面可能有所不同。
  * 此外，在给定的 lock 类中，中断正在进行的锁获取的能力可能不可用。
  * 因此，实现不需要为所有三种形式的锁获取定义完全相同的保证或语义，也不需要支持正在进行的锁获取的中断。
- * 需要一个实现来清楚地记录每个锁定方法提供的语义和保证。它还必须遵守此接口中定义的中断语义，
+ * 一个实现需要清楚地记录每个锁定方法提供的语义和保证。它还必须遵守此接口中定义的中断语义，
  * 以支持锁获取的中断：要么完全中断，要么仅在方法条目上中断。
  *
  * <p>As interruption generally implies cancellation, and checks for
@@ -236,7 +238,7 @@ public interface Lock {
      * </ul>
      * then {@link InterruptedException} is thrown and the current thread's
      * interrupted status is cleared.
-     * 如果当前线程：在进入该方法时设置了其中断状态；或者在获取锁时被中断，并且支持中断锁获取，
+     * 如果当前线程：在进入该方法时已经设置了其中断状态；或者在获取锁时被中断，并且支持中断锁获取，
      * 则抛出 InterruptedException ，并清除当前线程的中断状态。
      *
      * <p><b>Implementation Considerations</b>
@@ -278,6 +280,7 @@ public interface Lock {
      * 如果锁可用，则获取锁并立即返回值 true 。如果锁不可用，则此方法将立即返回值 false
      *
      * <p>A typical usage idiom for this method would be:
+     *      这种方法的典型用法是：
      *  <pre> {@code
      * Lock lock = ...;
      * if (lock.tryLock()) {
@@ -292,6 +295,7 @@ public interface Lock {
      *
      * This usage ensures that the lock is unlocked if it was acquired, and
      * doesn't try to unlock if the lock was not acquired.
+     * 此用法可以确保在获取锁后将其解锁，在没有获取锁时不会尝试解锁。
      *
      * @return {@code true} if the lock was acquired and
      *         {@code false} otherwise
@@ -331,7 +335,7 @@ public interface Lock {
      * </ul>
      * then {@link InterruptedException} is thrown and the current thread's
      * interrupted status is cleared.
-     * 如果当前线程：在进入该方法时设置了其中断状态；或者在获取锁时被中断，并且支持中断锁获取，
+     * 如果当前线程：在进入该方法时已经设置了其中断状态；或者在获取锁时被中断，并且支持中断锁获取，
      * 则抛出 InterruptedException ，并清除当前线程的中断状态。
      *
      * <p>If the specified waiting time elapses then the value {@code false}
@@ -387,7 +391,7 @@ public interface Lock {
      * Any restrictions and the exception
      * type must be documented by that {@code Lock} implementation.
      * 
-     * Lock 实现通常会对哪个线程可以释放锁施加限制（通常只有锁的持有者可以释放锁），
+     * Lock 实现通常会对哪个线程可以释放锁施加强制限制（通常只有锁的持有者可以释放锁），
      * 并且如果违反了限制，可能会抛出（未经检查的）异常。 Lock 实现必须记录任何限制和异常类型。
      */
     void unlock();
@@ -418,3 +422,12 @@ public interface Lock {
     Condition newCondition();
 }
 ```
+总结：
+1. Lock在synchronized的功能上进行了扩展，更加灵活，不会自动释放，需要手动解锁。
+2. 提供了一下几种方法方法：
+    - lock() 死等，直到获取锁。
+    - lockInterruptibly() 死等，但是可以被中断。
+    - tryLock() 尝试获取锁，能得到就用，得不到就算，不会被阻塞，立即返回获得结果。
+    - tryLock(long time, TimeUnit unit) 尝试在一段时间内获取，能得到就用，规定的时间内得不到就算，超过规定的时间也就返回了。
+    - unlock() 解锁，必须是持有所得线程发起，要不然会抛出 unchecked Exception。
+    - newCondition() 返回一个绑定到该锁上的Condition实例。

@@ -15,6 +15,7 @@ public class ConditionTest {
                 try {
                     lock.lock();
                     lock.lock();
+//                    Thread.currentThread().interrupt();
                     condition.await();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -44,7 +45,7 @@ public class ConditionTest {
         }, "thread2");
 
         thread1.start();
-//        Thread.sleep(1000);
-//        thread2.start();
+        Thread.sleep(1000);
+        thread2.start();
     }
 }

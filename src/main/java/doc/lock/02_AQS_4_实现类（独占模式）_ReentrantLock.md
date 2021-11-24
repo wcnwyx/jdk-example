@@ -1,11 +1,12 @@
 ##一：ReentrantLock介绍
+可重入的锁，使用AQS来实现。  
 ```java
 /**
  * A reentrant mutual exclusion {@link Lock} with the same basic
  * behavior and semantics as the implicit monitor lock accessed using
  * {@code synchronized} methods and statements, but with extended
  * capabilities.
- * 一个可重入的互斥的Lock，其基本行为和语义与使用synchronized方法和语句访问的饮食监视锁相同，
+ * 一个可重入的互斥的Lock，其基本行为和语义与使用synchronized方法和语句访问的隐式监视锁相同，
  * 但具有扩展功能。
  *
  * <p>A {@code ReentrantLock} is <em>owned</em> by the thread last
@@ -17,7 +18,7 @@
  * #getHoldCount}.
  * ReentrantLock被上次成功锁定并未解锁的线程持有。
  * 当锁不属于另一个线程时，调用lock的线程将返回并成功获取锁。
- * 如果当前线程已经拥有锁，该方法将立即返回（这里就体现了可重入）。
+ * 如果当前线程已经拥有锁，该方法将立即返回（这里就体现了可重入，可以多次lock）。
  * 可以使用方法isHeldByCurrentThread和getHoldCount来检查这一点。
  *
  * <p>The constructor for this class accepts an optional
@@ -38,7 +39,7 @@
  * is available even if other threads are waiting.
  * 
  * 此类的构造方法接收一个fairness的参数。当设置true是，在争用的情况下，
- * 锁倾向于授予对等待时间醉成的线程的访问权。否则，次所不保证任何特定的访问顺序。
+ * 锁倾向于授予对等待时间最长的线程的访问权。否则，此锁不保证任何特定的访问顺序。
  * 与使用默认设置的程序相比，使用由多个线程访问的公平锁的程序可能显示较低的总体吞吐量（即较慢；通常较慢），
  * 但在获得锁和保证无饥饿的时间上差异较小。但是请注意，锁的公平性并不能保证线程调度的公平性。
  * 因此，使用公平锁的多个线程中的一个线程可能会连续多次获得公平锁，而其他活动线程则没有进行，并且当前没有持有该锁。
@@ -80,7 +81,7 @@
  * the same thread. Attempts to exceed this limit result in
  * {@link Error} throws from locking methods.
  * 此锁支持同一线程最多2147483647个递归锁。试图超过此限制将导致锁方法抛出 Error。
- * 因为state是一个int值
+ * 因为AQS的state属性是一个int值
  *
  * @since 1.5
  * @author Doug Lea
@@ -150,8 +151,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * the fairness setting for this lock, then use
      * {@link #tryLock(long, TimeUnit) tryLock(0, TimeUnit.SECONDS) }
      * which is almost equivalent (it also detects interruption).
-     * 如果未被其它想成持有则立即返回true，成功获得所并将持有数设置为1.
-     * 如果锁当前可用，即使该锁被设定为使用公平的排序策略，不管当前是否有其它想成在等待该锁，
+     * 如果未被其它线程持有则立即返回true，成功获得所并将持有数设置为1.
+     * 如果锁当前可用，即使该锁被设定为使用公平的排序策略，不管当前是否有其它线程在等待该锁，
      * 调用tryLock也会立即获得所。这种 barging（乱闯）的行为在某些情况下还是有用的，即使它破坏了公平性。
      * 如果你想要准守此锁的公平性设置，请使用tryLock(0, TimeUnit.SECONDS)，这几乎是等效的（它还检测中断）
      *
@@ -168,7 +169,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      *         thread; and {@code false} otherwise
      */
     public boolean tryLock() {
-        return sync.nonfairTryAcquire(1);
+        return sync.nonfairTryAcquire(1);//调用的是nonfairTryAcquire，非公平的
     }
 
     /**
@@ -193,7 +194,11 @@ public class ReentrantLock implements Lock, java.io.Serializable {
 总结：
 1. ReentrantLock是一个和synchronized拥有相同行为和语义的可重入的互斥锁，但是又额外的功能。
 2. 因为实现了Lock接口，所以拥有lock、tryLock、unlock等方法，但是这些方法都是通过内部AQS实现类实现的，后面细看。
-3. ReentrantLock支持公平和非公平两种模式,默认使用的是非公平模式。但是即使在公平的模式下，tryLock（）也会存在parking（乱撞）状况打破公平性。
+3. ReentrantLock支持公平和非公平两种模式,默认使用的是非公平模式。但是即使在公平的模式下，tryLock（）也会存在barging（乱撞）状况打破公平性。
+4. tryLock方法就体现出了AQS里的barging现象，barging可以提高吞吐量，为什么呢？如果说目前有多个线程再排队等待获取锁，然后锁释放了，
+  第一个等待的线程（thread1）被unpark并再次尝试获取锁，然后另外一个线程（thread20）第一次来获取锁执行tryLock，thread1虽然被unPark,
+  但是不一定拥有cpu资源，或许不会立即执行，但是现在thread20正在执行，其拥有cpu资源，所以让thread20立即获得所，让thread1等一下反而会更好的利用cpu，
+  反之，需要thread20让出cpu资源，thread1再等待获得cpu资源才可以获得所，浪费了cpu资源。
 
 ##二：ReentrantLock中AQS的逻辑
 ```java
@@ -224,20 +229,20 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          * 执行非公平的tryLock. tryAcquire是在子类中实现的，但是tryAcquire和tryLock都需要该方法（进行非公平的尝试）。
          * 
          * 问题思考：如果此处不要该方法，而是直接在子类的NonfairSync.tryAcquire方法里写该逻辑，和FairSync保持结构一致，整体代码风格不是更规整易读吗？
-         * 因为ReentrantLock.tryLock方法的定义，tryLock方法明确表明是非公平的，支持barge现象的，所以只能调用非公平的tryAcquire实现，
+         * 因为ReentrantLock.tryLock方法的定义，tryLock方法明确表明是非公平的，支持barging现象的，所以只能调用非公平的tryAcquire实现，
          * 如果写在NonfairSync中，sync在构造方法中定义的是FairSync，就调用不到NonfairSync中的非公平版本的tryAcquire了。
          */
         final boolean nonfairTryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
             int c = getState();
             if (c == 0) {
-                //非公平性就体现在这里，不管是否有其它线程再排队，上来就改状态。
+                //非公平性就体现在这里，不管是否有其它线程再排队，上来就改状态，就是横
                 if (compareAndSetState(0, acquires)) {
                     setExclusiveOwnerThread(current);
                     return true;
                 }
             } else if (current == getExclusiveOwnerThread()) {
-                //这里就体现了可重入行，如果当前线程已经持有了该lock，则将state+1，并返回true
+                //这里就体现了可重入性，如果当前线程已经持有了该lock，则将state+1，并返回true
                 int nextc = c + acquires;
                 if (nextc < 0) // overflow
                     throw new Error("Maximum lock count exceeded");
@@ -271,7 +276,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         /**
          * Performs lock.  Try immediate barge, backing up to normal
          * acquire on failure.
-         * 执行lock。尝试立即barge（不管有没有其它线程再等待，上来就改状态，体现了非公平性），失败时再次调用常用的的acquire。
+         * 执行lock。尝试立即barge（不管有没有其它线程再等待，上来就改状态，体现了非公平性），失败时再次调用acquire去排队。
          */
         final void lock() {
             if (compareAndSetState(0, 1))
@@ -303,7 +308,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             final Thread current = Thread.currentThread();
             int c = getState();
             if (c == 0) {
-                //这里就体现了公平性，如果没有现在在排队，才进行修改状态。
+                //这里就体现了公平性，如果没有线程在排队，才进行修改状态。
                 if (!hasQueuedPredecessors() &&
                         compareAndSetState(0, acquires)) {
                     setExclusiveOwnerThread(current);
@@ -335,5 +340,5 @@ public class ReentrantLock implements Lock, java.io.Serializable {
 ```
 总结：
 1. 因为ReentrantLock支持公平和非公平，所有AQS的实现也有两个版本。
-2. 公平和非公平的实现原理就是在tryAcquire方法中，如果状态是0，需不需要先判断是否有线程再排队，然后再去CAS修改状态。
-3. 可重入性是通过state来实现，state不仅是0和1来表示未锁定和锁定，可以通过大于1的数字来表示锁定的次数。
+2. 此类中，就将AQS的state属性 不仅用来表示是否被锁定，还表示锁定的次数，也实现了可重入性功能。
+3. 公平和非公平的实现原理就是在tryAcquire方法中，如果状态是0，需不需要先判断是否有线程在排队，然后再去CAS修改状态。

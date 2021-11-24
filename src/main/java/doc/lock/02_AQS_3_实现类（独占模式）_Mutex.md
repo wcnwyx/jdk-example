@@ -1,4 +1,5 @@
 ##实现类一： AQS注释中的一个实现类Mutex
+通过此类可以很容易理解tryAcquire、tryRelease的用法，也理解不可重入，后续和可重入锁ReentrantLock对比下。  
 ```java
 /**
  * Here is a non-reentrant mutual exclusion lock class that uses
@@ -56,10 +57,10 @@ class Mutex implements Lock, java.io.Serializable {
 }
 ```
 Mutex总结：  
-1. 通过state来表示锁定和未锁定状态，0为未锁定，1为锁定状态。
+1. 此类中AQS的state属性用来表示锁定和未锁定状态，0为未锁定，1为锁定状态。
 2. Mutex为Lock接口实现，所以有tryLock方法和unlock方法。
     - 2.1 tryLock方法通过syn.tryAcquire(1)方法来获取锁，将state通过CAS方法从0改为1即可。
     - 2.2 unlock方法通过syn.release(1)方法来释放，最终调用tryRelease(1)将state设置为0。
-3. Nutex是不可重入的，因为一个线程再第一次获取锁后，第二次再去获取锁时，此时state已经为1，tryAcquire方法中将state通过CAS方法从0改为1就会失败。
+3. Nutex是不可重入的，因为一个线程在第一次获取锁后，第二次再去获取锁时，此时state已经为1，tryAcquire方法中将state通过CAS方法从0改为1就会失败。
 4. 问题：这里其实只是体现出了state的用法，但是AQS里面的队列其实没有体现出来，后续通过ReentrantLock来看更多的操作。
 

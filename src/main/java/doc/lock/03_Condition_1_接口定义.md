@@ -1,3 +1,4 @@
+#Condition接口定义
 ```java
 /**
  * {@code Condition} factors out the {@code Object} monitor
@@ -21,7 +22,7 @@
  * condition. The key property that waiting for a condition provides
  * is that it <em>atomically</em> releases the associated lock and
  * suspends the current thread, just like {@code Object.wait}.
- * Conditions（也称为<em>条件队列</em>或<em>条件变量</em>）为一个线程提供了一种暂停执行（等待）的方法，
+ * Conditions（也称为条件队列或条件变量）为一个线程提供了一种暂停执行（等待）的方法，
  * 直到另一个线程通知某些状态条件现在可能为真。由于对该共享状态信息的访问发生在不同的线程中，
  * 因此必须对其进行保护，因此某种形式的锁与该条件相关联。等待条件提供的关键属性是，
  * 它以原子方式释放关联的锁并挂起当前线程，就像{@code Object.wait}
@@ -42,6 +43,13 @@
  * only notifying a single thread at a time when items or spaces become
  * available in the buffer. This can be achieved using two
  * {@link Condition} instances.
+ * 例如，假设我们有一个有界的buffer，并支持put和take方法。
+ * 如果尝试在空的buffer上执行take，则线程将被阻塞直到有一个项目可用（buffer不为空）；
+ * 如果尝试在满的buffer上执行put，则线程将阻塞直到有一个空间可用。
+ * 我们希望在单独的等待集中保持等待{@code put}线程和{@code take}线程，
+ * 以便在buffer中的项目或空间可用时，我们可以使用只通知单个线程的优化。
+ * 这可以使用两个Condition实例达到。
+ * 
  * <pre>
  * class BoundedBuffer {
  *   <b>final Lock lock = new ReentrantLock();</b>
@@ -85,6 +93,7 @@
  * (The {@link java.util.concurrent.ArrayBlockingQueue} class provides
  * this functionality, so there is no reason to implement this
  * sample usage class.)
+ * ArrayBlockingQueue类提供了此功能，因此没有理由实现此示例样品类。
  *
  * <p>A {@code Condition} implementation can provide behavior and semantics
  * that is
@@ -93,7 +102,7 @@
  * when performing notifications.
  * If an implementation provides such specialized semantics then the
  * implementation must document those semantics.
- * 一个Condition实现可以提供不同于 Object 监视方法的行为和语义，例如保证通知的顺序，或者在执行通知时不需要持有锁。
+ * 一个Condition实现可以提供不同于 Object 监视方法的行为和语义，例如保证通知的顺序，或者在执行通知时不需要持有锁(??执行通知的时候不是必须持有锁吗?)。
  * 如果一个实现提供了这种专门的语义，那么该实现必须记录这些语义。
  *
  * <p>Note that {@code Condition} instances are just normal objects and can
@@ -106,7 +115,7 @@
  * {@linkplain #await waiting} and {@linkplain #signal signalling} methods.
  * It is recommended that to avoid confusion you never use {@code Condition}
  * instances in this way, except perhaps within their own implementation.
- * 请注意，Condition实力只是普通对象，它们自身可以用作synchronized语义中的目标，
+ * 请注意，Condition实例只是普通对象，它们自身可以用作synchronized语义中的目标，
  * 并且可以调用其自身的监视器方法 Object.wait 和 Object.notify。
  * 获取Condition实例的监视器锁或使用其监视器方法 与 获取与该Condition关联的lock
  * 或使用其{@linkplain#wait waiting}和{@linkplain#signal signaling}方法没有特定的关系。
@@ -129,8 +138,14 @@
  * recommended that applications programmers always assume that they can
  * occur and so always wait in a loop.
  * 在等待 Condition 时，通常允许出现虚假唤醒，作为对底层平台语义的让步。
- * 这对大多数应用程序几乎没有实际影响，因为 Condition 应该始终在循环中等待，测试正在等待的状态谓词。
+ * 这对大多数应用程序几乎没有实际影响，因为 Condition 应该始终在循环中等待，测试正在等待的状态断言。
  * 实现可以自由地消除虚假唤醒的可能性，但建议应用程序程序员始终假设它们可以发生，因此始终在循环中等待。
+ * 啥意思呢？看上面的BoundedBuffer示例代码，再take方法中有这么一个逻辑：
+ * while (count == 0)
+ *      notEmpty.await();
+ * 如果count==0表示buffer是空的，就await等待，但是可能会被虚假的唤醒，
+ * 不是因为put方法放进去了一个item，然后notEmpty.signal()唤醒的，此时count还是为0，
+ * 如果不是使用while循环判断，那么就往下执行了，就报错了，加了while循环判断，就避免了虚假唤醒导致的错误。
  *
  * <p>The three forms of condition waiting
  * (interruptible, non-interruptible, and timed) may differ in their ease of
@@ -236,8 +251,10 @@ public interface Condition {
      */
     void await() throws InterruptedException;
 
+    //不可中断的等待
     void awaitUninterruptibly();
 
+    //超时等待
     long awaitNanos(long nanosTimeout) throws InterruptedException;
 
     boolean await(long time, TimeUnit unit) throws InterruptedException;
@@ -289,4 +306,14 @@ public interface Condition {
     void signalAll();
 }
 ```
-总结： Condition为Object的监视器方法（wait、notify和notifyAll）的扩展吧。核心就两个功能：等待、唤醒。
+总结： 
+1. Condition为Object的监视器方法（wait、notify和notifyAll）的扩展吧。核心就两个功能：等待、唤醒。
+2. Condition是和一个某种形式的锁关联的，操作之前必须持有该锁。
+3. 存在**虚假唤醒**的情况，一定要循环判断，防止虚假唤醒导致程序异常。
+4. 提供一下方法：
+    - await() 等待，四种情况可以唤醒：signal、signalAll、interrupt、虚假唤醒
+    - awaitUninterruptibly() 等待不支持中断，三种情况可以唤醒：signal、signalAll、虚假唤醒
+    - awaitNanos(long nanosTimeout)、await(long time, TimeUnit unit)、awaitUntil(Date deadline)
+      这三个方法都是带超时的等待，五中情况可以唤醒：signal、signalAll、interrupt、虚假唤醒、超时
+    - signal() 唤醒一个等待Condition的线程
+    - signalAll 唤醒所有等待Condition的线程

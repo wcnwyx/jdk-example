@@ -27,7 +27,8 @@ public class ConditionObject implements Condition, java.io.Serializable {
             unlinkCancelledWaiters();
             t = lastWaiter;
         }
-        //这里就将waitStatus中的CONDITION状态给用到了
+        //这里就将waitStatus中的CONDITION状态给用到了。
+       // Node.CONDITION的注释中有说明，该状态表示节点在条件队列中。
         Node node = new Node(Thread.currentThread(), Node.CONDITION);
         if (t == null)
             firstWaiter = node;
@@ -50,8 +51,8 @@ public class ConditionObject implements Condition, java.io.Serializable {
      * particular target to unlink all pointers to garbage nodes
      * without requiring many re-traversals during cancellation
      * storms.
-     * 从条件队列中将已取消的等待节点的 取消链接。只有在持有锁的时候调用。
-     * 当在条件等待期间发生取消时，以及在插入新的等待者期间发现lastWaiter是取消的时候，调用此函数。
+     * 从条件队列中将已取消的等待节点移除（取消链接）。只有在持有锁的时候调用。
+     * 当在条件等待期间发生取消时，以及在插入新的等待者期间发现lastWaiter是已取消的时候，调用此函数。
      * 需要这种方法来避免在没有信号的情况下垃圾保留。
      * 因此，即使它可能需要一个完整的遍历，它也只有在没有信号的情况下发生超时或取消才会起作用。
      * 它遍历所有节点，而不是在特定目标处停止，以取消所有指向垃圾节点的指针的链接，而无需在取消风暴期间多次重新遍历。
@@ -79,8 +80,9 @@ public class ConditionObject implements Condition, java.io.Serializable {
 }
 ```
 总结：
-1. 此类中也是使用Node来维护了一个单向链表，维护所有等待该Condition的线程队列，和AQS中的同步队列不是一个东西哦。
-2. 此类中的Node的waitStatus都是Condition，表示等待状态。
+1. 此类中也是使用Node来维护了一个单向链表，维护所有等待该Condition的线程队列，和AQS中的同步队列不是一个队列，
+   这两个队列是会交互的。
+2. 此类中的Node的waitStatus都是Condition，表示等待状态，表示该节点处于等待队列中。
 3. 两个基本的操作，添加新节点和删除取消的节点。
 
 
@@ -89,7 +91,7 @@ public class ConditionObject implements Condition, java.io.Serializable {
 public class ConditionObject implements Condition, java.io.Serializable {
     /**
      * Implements interruptible condition wait.
-     * 实现可中断的条件等待。
+     * 实现可中断的条件等待。（下面的注释已经大体描述清楚每一步的逻辑了）
      * <ol>
      * <li> If current thread is interrupted, throw InterruptedException.
      *      如果当前线程已经被中断，则抛出InterruptedException。
@@ -102,7 +104,7 @@ public class ConditionObject implements Condition, java.io.Serializable {
      *      通过保存状态作为参数来调用release方法，如果失败则抛出IllegalMonitorStateException。
      *      
      * <li> Block until signalled or interrupted.
-     *      阻塞至被信号通过或被中断。
+     *      阻塞至被信号通知或被中断。
      *      
      * <li> Reacquire by invoking specialized version of
      *      {@link #acquire} with saved state as argument.
@@ -118,27 +120,30 @@ public class ConditionObject implements Condition, java.io.Serializable {
         Node node = addConditionWaiter(); //创建一个condition类型的Node并入链
         int savedState = fullyRelease(node);//完全释放并返回当时的state
         int interruptMode = 0;
-        //判断是否在同步队列中，不在表示还未signal，在了表示已经被signal了
+        //判断是否在AQS的同步队列中，不在表示还未signal，在了表示已经被signal了
         while (!isOnSyncQueue(node)) {
             //1. fullyRelease后node不在AQS的同步队列中了，所以会立即进入该方法，后续该线程被park
-            //其他线程调用signal时会将此线程unpark，也会将此线程添加到AQS的同步队列中去，结束wile循环。后面在看signal。
+            //其他线程调用signal时会将此线程unpark，又会将此线程添加到AQS的同步队列中去，结束wile循环。后面在看signal。
             //2. 会不会此时已经在AQS的同步队列中了呢，应该也是会的，就是此线程刚fullyRelease，
-            // 其它线程signal的时候又将该node给加到了同步队列中，此时就不park了，直接往后执行了。
+            // 其它线程signal的时候又将该node给加到了同步队列中，此时就不park了，直接往后执行就可以了。
             //3. 如果park之前被中断了，那么此处的park会不起作用，直接往下继续执行。
             LockSupport.park(this);
             if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
                 //阻塞的过程中被中断了，就直接break出来
+                //checkInterruptWhileWaiting用来检测中断的时机并将node加到AQS队列中，后面再细看。
                 break;
         }
         if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
-            //acquireQueued再次获取，如果获取到了就继续执行，那什么时候会获取不到呢？
-            //如果多个线程在await，然后被signalAll同时唤醒，最终也只能有一个线程优先获取成功，其它线程acquireQueued时被再次park，
-            // 然后获取成功的线程在后续unlock时通过AQS同步队列逻辑unparkSuccessor来逐个唤醒、逐个获取成功。
+            //acquireQueued需要再次获取锁资源
+            // 这里会存在获取不到锁资源的情况吗？不会，即使上面不是因为signal唤醒而unpark，而是因为中断而唤醒，从而执行到这里，
+            // acquireQueued也必须获取到锁，获取不要会继续给park住，然后排队等待获取，
+            // 而且acquireQueued方法是不支持中断的，只能等到获取成功才会继续执行。而且await之前执行了lock操作，之后还会执行unlock操作，
+            //如果说获取不到那不就出错了嘛。
             interruptMode = REINTERRUPT;
         if (node.nextWaiter != null) // clean up if cancelled 清理被取消的节点
             unlinkCancelledWaiters();
         if (interruptMode != 0)
-            reportInterruptAfterWait(interruptMode);
+            reportInterruptAfterWait(interruptMode);//将中断状态给报告出去
     }
 
     /**
@@ -171,10 +176,10 @@ public class ConditionObject implements Condition, java.io.Serializable {
     }
 
     /** Mode meaning to reinterrupt on exit from wait */
-    //该模式意味着退出等待时重新中断
+    //该模式意味着退出等待时重新中断，发出信号后被中断
     private static final int REINTERRUPT =  1;
     /** Mode meaning to throw InterruptedException on exit from wait */
-    //模式意味着退出等待时抛出InterruptedException
+    //模式意味着退出等待时抛出InterruptedException，发出信号前被中断
     private static final int THROW_IE    = -1;
     
     /**
@@ -213,7 +218,7 @@ public class ConditionObject implements Condition, java.io.Serializable {
          * until it finishes its enq().  Cancelling during an
          * incomplete transfer is both rare and transient, so just
          * spin.
-         * 如果我们输给了一个signal(),知道它完成enq()否则我们无法继续。
+         * 如果我们输给了一个signal(),直到它完成enq()否则我们无法继续。
          * 在不完全传输过程中的取消既罕见又短暂，所以只需旋转即可。
          * 
          * 啥意思呢？ signal的第一步就会将node的状态从CONDITION改为0，那么该方法上面的CAS操作将会失败，
@@ -263,7 +268,7 @@ public class ConditionObject implements Condition, java.io.Serializable {
     - 3.3 reportInterruptAfterWait 将重新执行Thread.interrupt().
 
 4. 多个线程await，被多次signal，每次signal则唤醒一个await的线程。
-5. 多个线程await，被signalAll同时唤醒，则会在acquireQueued 重新获取锁的时候再次park，然后通过AQS的release逐个唤醒。
+5. 多个线程await，被signalAll同时唤醒，其实应该说是将等待队列中的线程逐个唤醒。
 
 ##三：signal逻辑
 ```java
@@ -327,10 +332,12 @@ public class ConditionObject implements Condition, java.io.Serializable {
          * case the waitStatus can be transiently and harmlessly wrong).
          * 拼接到队列上，并尝试设置前置线程的waitStatus，以指示线程（可能）正在等待。
          * 如果已取消或尝试设置waitStatus失败，则唤醒以重新同步（在这种情况下，waitStatus可能会暂时错误，且不会造成伤害）
+         * 通过AQS的enq方法将节点传输到AQS的同步队列上
          */
         Node p = enq(node);
         int ws = p.waitStatus;
-        if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))//何时会导致这种情况呢？
+        if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
+            //被取消了或者状态修改失败，直接unpark
             LockSupport.unpark(node.thread);
         return true;
     }
@@ -368,4 +375,4 @@ public class ConditionObject implements Condition, java.io.Serializable {
 总结：
 1. signal 单个唤醒，则将第一个节点firstWaiter状态从CONDITION改为0，并加等待队列转移到同步队列中。
 2. signalAll 则是从第一个循环到最后一个，都处理一遍。
-3. 这里的signal并不会直接将等待节点的线程unpark，而是加到了同步队列，等通知者线程unlock了，release逻辑会将等待着线程unpark。
+3. 这里的signal并不会直接将等待节点的线程unpark，而是加到了同步队列，等通知者线程unlock了，release逻辑会将等待线程unpark。

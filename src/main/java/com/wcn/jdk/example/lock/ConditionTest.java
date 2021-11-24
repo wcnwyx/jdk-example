@@ -14,13 +14,11 @@ public class ConditionTest {
                 System.out.println("thread1 await before");
                 try {
                     lock.lock();
-                    lock.lock();
 //                    Thread.currentThread().interrupt();
                     condition.await();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }finally {
-                    lock.unlock();
                     lock.unlock();
                 }
                 System.out.println("thread1 await end.");
@@ -32,6 +30,7 @@ public class ConditionTest {
             public void run() {
                 lock.lock();
                 try {
+                    Thread.sleep(10000000);
                     System.out.println("thread2 signal before");
                     condition.signal();
                     System.out.println("thread2 signal end.");
@@ -47,5 +46,7 @@ public class ConditionTest {
         thread1.start();
         Thread.sleep(1000);
         thread2.start();
+        Thread.sleep(1000);
+        thread1.interrupt();
     }
 }

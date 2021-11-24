@@ -1,3 +1,5 @@
+##CountDownLatch
+AQS共享模式的实现。  
 ```java
 /**
  * A synchronization aid that allows one or more threads to wait until
@@ -26,8 +28,8 @@
  * completed some action, or some action has been completed N times.
  * CountDownLatch 是一种多用途的同步工具，可用于多种目的。
  * CountDownLatch用一个计数初始化，用作简单的开/关 门闩或闸门：
- * 所有线程调用 await 方法等待闸门，知道一个线程调用countDown方法来打开闸门。
- * CountDownLatch的计数被初始化为N，可以让一个线程等待，知道N个想成完成某些动作，
+ * 所有线程调用 await 方法等待闸门，直到一个线程调用countDown方法来打开闸门。
+ * CountDownLatch的计数被初始化为N，可以让一个线程等待，直到N个线程完成某些动作，
  * 或者某些动作被完成N次。
  *
  * <p>A useful property of a {@code CountDownLatch} is that it
@@ -36,11 +38,12 @@
  * thread from proceeding past an {@link #await await} until all
  * threads could pass.
  * CountDownLatch一个有用的特性是，它不要求调用countDown的线程在继续之前要等待计数达到0，
- * 它只是防止任何线程通过await，知道所有线程都可以通过。
+ * 它只是防止任何线程通过await，直到所有线程都可以通过。
  *
  * <p><b>Sample usage:</b> Here is a pair of classes in which a group
  * of worker threads use two countdown latches:
  * 示例用法：这里有一对类，其中一组工作线程使用两个CountDownLatch：
+ * 
  * <ul>
  * <li>The first is a start signal that prevents any worker from proceeding
  * until the driver is ready for them to proceed;
@@ -153,6 +156,7 @@ public class CountDownLatch {
         }
 
         protected int tryAcquireShared(int acquires) {
+            // state==0则成功，否则都是失败
             return (getState() == 0) ? 1 : -1;
         }
 
@@ -164,7 +168,7 @@ public class CountDownLatch {
                     return false;
                 int nextc = c-1;
                 if (compareAndSetState(c, nextc))
-                    return nextc == 0;
+                    return nextc == 0;//只有state被减到0才算成功
             }
         }
     }
@@ -179,7 +183,7 @@ public class CountDownLatch {
     /**
      * Causes the current thread to wait until the latch has counted down to
      * zero, unless the thread is {@linkplain Thread#interrupt interrupted}.
-     * 导致当前线程等待锁计数倒计时到零，除非该线程为 interrupted 。
+     * 使当前线程等待，直到锁计数倒计时到零，除非该线程被中断。
      *
      * <p>If the current count is zero then this method returns immediately.
      * 如果当前计数器时0则该方法会立即返回。
@@ -188,13 +192,15 @@ public class CountDownLatch {
      * thread becomes disabled for thread scheduling purposes and lies
      * dormant until one of two things happen:
      * 如果当前计数大于零，则出于线程调度目的，当前线程将被禁用，并处于休眠状态，直到发生以下两种情况之一：
+     * 
      * <ul>
      * <li>The count reaches zero due to invocations of the
      * {@link #countDown} method; or
      * <li>Some other thread {@linkplain Thread#interrupt interrupts}
      * the current thread.
      * </ul>
-     * 计数通过调用countDown方法达到0；或者其他线程中断当前线程。
+     * 计数通过调用countDown方法达到0；
+     * 或者其他线程中断当前线程。
      *
      * <p>If the current thread:
      * <ul>
@@ -240,7 +246,7 @@ public class CountDownLatch {
 总结：
 1. 基本用法，一个或多个线程await，然后等待计数减到0，到0时将所有等待中的线程唤醒。
 2. 只要count不为0，所有的tryAcquireShared就不会成功。
-3. 只要count没有减到0，所有的tryReleaseShared也不会成功，最后一个将count见到0的线程才成功，再执行doReleaseShared操作。
+3. 只要count没有减到0，所有的tryReleaseShared也不会成功，最后一个将count减到0的线程才成功，再执行doReleaseShared操作。
 4. 一个大任务分片处理，多个线程分片执行，都执行完了再继续。则是一个线程去wait，多个线程去countDown。
   这种情况下不太能显示出共享模式的用法，只是最后一个countDown为0的线程会去release掉那一个wait的线程。没有体现出传播的特性。
 5. 还有一种用法是多个线程在wait，一个线程countDown后，所有wait的线程开始工作，这是就体现出了传播的特性。

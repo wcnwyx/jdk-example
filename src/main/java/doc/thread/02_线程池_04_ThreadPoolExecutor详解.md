@@ -846,8 +846,10 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     break retry;
                 c = ctl.get();  // Re-read ctl 重新获取ctl
                 if (runStateOf(c) != rs)
+                    //新获取的状态和前面获取的rs不一致了，再次从头循环判断
                     continue retry;
                 // else CAS failed due to workerCount change; retry inner loop
+                //compareAndIncrementWorkerCount 的CAS失败因为worker数量改变了，则再次执行内部循环
             }
         }
 
@@ -862,31 +864,35 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                 final ReentrantLock mainLock = this.mainLock;
                 mainLock.lock();
                 try {
-                    // Recheck while holding lock.
+                    // Recheck while holding lock. 在保持锁的同时重新检查
                     // Back out on ThreadFactory failure or if
                     // shut down before lock acquired.
+                    //在ThreadFactory出现故障或在获取锁之前关闭时退出。
                     int rs = runStateOf(ctl.get());
 
                     if (rs < SHUTDOWN ||
                             (rs == SHUTDOWN && firstTask == null)) {
+                        //如果是运行状态或者SHUTDOWN状态但是firstTask为null
                         if (t.isAlive()) // precheck that t is startable
+                            //如果新创建的已经被启动了，则抛出异常
                             throw new IllegalThreadStateException();
-                        workers.add(w);
+                        workers.add(w);//将新创建的worker加到workers集合中
                         int s = workers.size();
                         if (s > largestPoolSize)
-                            largestPoolSize = s;
+                            largestPoolSize = s;//当前个数大于largestPoolSize，则更新之
                         workerAdded = true;
                     }
                 } finally {
                     mainLock.unlock();
                 }
                 if (workerAdded) {
-                    t.start();
+                    t.start();//启动线程
                     workerStarted = true;
                 }
             }
         } finally {
             if (! workerStarted)
+                //如果线程启动失败，则之后失败处理逻辑
                 addWorkerFailed(w);
         }
         return workerStarted;
@@ -896,6 +902,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * Removes this task from the executor's internal queue if it is
      * present, thus causing it not to be run if it has not already
      * started.
+     * 如果存在此任务，则将其从执行器的内部队列中移除，从而导致尚未启动的任务无法运行。
      *
      * <p>This method may be useful as one part of a cancellation
      * scheme.  It may fail to remove tasks that have been converted
@@ -904,6 +911,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * converted into a form that maintains {@code Future} status.
      * However, in such cases, method {@link #purge} may be used to
      * remove those Futures that have been cancelled.
+     * 此方法可作为取消方案的一部分使用。它可能无法删除在放入内部队列之前已转换为其他形式的任务。
+     * 例如，使用submit输入的任务可能会转换为保持Future状态的形式。
+     * 然而，在这种情况下，可以使用方法purge删除已取消的Futures。
      *
      * @param task the task to remove
      * @return {@code true} if the task was removed
@@ -917,12 +927,224 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     /**
      * Invokes the rejected execution handler for the given command.
      * Package-protected for use by ScheduledThreadPoolExecutor.
+     * 为给定命令调用被拒绝的执行处理程序。
      */
     final void reject(Runnable command) {
         handler.rejectedExecution(command, this);
     }
-    final void reject(Runnable command) {
-        handler.rejectedExecution(command, this);
+}
+```
+
+##三： runWorker 任务、线程执行逻辑
+execute创建的worker是一个Runnable，其run方法被委托给了runWorker方法。  
+```java
+public class ThreadPoolExecutor extends AbstractExecutorService {
+    /**
+     * Main worker run loop.  Repeatedly gets tasks from queue and
+     * executes them, while coping with a number of issues:
+     * worker运行循环。重复从队列中获取任务并执行它们，同时处理许多问题：
+     *
+     * 1. We may start out with an initial task, in which case we
+     * don't need to get the first one. Otherwise, as long as pool is
+     * running, we get tasks from getTask. If it returns null then the
+     * worker exits due to changed pool state or configuration
+     * parameters.  Other exits result from exception throws in
+     * external code, in which case completedAbruptly holds, which
+     * usually leads processWorkerExit to replace this thread.
+     * 我们可以从一个初始任务开始，在这种情况下，我们不需要得到第一个任务。
+     * 否则，只要池在运行，我们就可以从getTask获取任务。
+     * 如果返回null，则worker将由于池状态或配置参数的更改而退出。
+     * 其他退出源于外部代码中的异常抛出，在这种情况下completedAbruptly保持不变，
+     * 这通常会导致processWorkerExit替换此线程。
+     *
+     * 2. Before running any task, the lock is acquired to prevent
+     * other pool interrupts while the task is executing, and then we
+     * ensure that unless pool is stopping, this thread does not have
+     * its interrupt set.
+     * 在运行任何任务之前，都会获取锁以防止任务执行时发生其他池中断，
+     * 然后我们会确保除非池停止，否则该线程不会设置其中断。
+     * 
+     *
+     * 3. Each task run is preceded by a call to beforeExecute, which
+     * might throw an exception, in which case we cause thread to die
+     * (breaking loop with completedAbruptly true) without processing
+     * the task.
+     * 每个任务运行之前都会调用beforeExecute，这可能会引发异常，在这种情况下，
+     * 会导致线程在不处理该任务的情况下死亡（使用CompletedThroughtly true中断循环）。
+     *
+     * 4. Assuming beforeExecute completes normally, we run the task,
+     * gathering any of its thrown exceptions to send to afterExecute.
+     * We separately handle RuntimeException, Error (both of which the
+     * specs guarantee that we trap) and arbitrary Throwables.
+     * Because we cannot rethrow Throwables within Runnable.run, we
+     * wrap them within Errors on the way out (to the thread's
+     * UncaughtExceptionHandler).  Any thrown exception also
+     * conservatively causes thread to die.
+     * 假设beforeExecute正常完成，我们运行任务，收集其抛出的任何异常以发送给afterExecute。
+     * 我们分别处理RuntimeException、Error（这两个规范都保证我们可以捕获）和任意的Throwable。
+     * 因为我们无法在Runnable.run中重新抛出Throwable，所以在退出时将它们包装在Error中（到线程的UncaughtExceptionHandler）。
+     * 任何抛出的异常都会保守地导致线程死亡。
+     *
+     * 5. After task.run completes, we call afterExecute, which may
+     * also throw an exception, which will also cause thread to
+     * die. According to JLS Sec 14.20, this exception is the one that
+     * will be in effect even if task.run throws.
+     * task.run 完成后，我们调用afterExecute，其也会抛出一个异常，其也会导致线程死亡。
+     * 根据JLS第14.20节，即使是task.run抛出的异常，此异常也将生效。
+     *
+     * The net effect of the exception mechanics is that afterExecute
+     * and the thread's UncaughtExceptionHandler have as accurate
+     * information as we can provide about any problems encountered by
+     * user code.
+     * 异常机制的最终效果是afterExecute和线程的UncaughtExceptionHandler具有尽可能准确的信息，
+     * 我们可以提供有关用户代码遇到的任何问题的信息。
+     *
+     * @param w the worker
+     */
+    final void runWorker(Worker w) {
+        Thread wt = Thread.currentThread();
+        Runnable task = w.firstTask;
+        w.firstTask = null;
+        w.unlock(); // allow interrupts
+        boolean completedAbruptly = true;
+        try {
+            while (task != null || (task = getTask()) != null) {
+                w.lock();
+                // If pool is stopping, ensure thread is interrupted;
+                // if not, ensure thread is not interrupted.  This
+                // requires a recheck in second case to deal with
+                // shutdownNow race while clearing interrupt
+                // 如果pool正在停止，确保线程已经被中断；否则，确保线程没有被中断。
+                // ???
+                if ((runStateAtLeast(ctl.get(), STOP) ||
+                        (Thread.interrupted() &&
+                                runStateAtLeast(ctl.get(), STOP))) &&
+                        !wt.isInterrupted())
+                    wt.interrupt();
+                try {
+                    beforeExecute(wt, task);
+                    Throwable thrown = null;
+                    try {
+                        task.run();
+                    } catch (RuntimeException x) {
+                        thrown = x; throw x;
+                    } catch (Error x) {
+                        thrown = x; throw x;
+                    } catch (Throwable x) {
+                        thrown = x; throw new Error(x);
+                    } finally {
+                        afterExecute(task, thrown);
+                    }
+                } finally {
+                    task = null;
+                    w.completedTasks++;
+                    w.unlock();
+                }
+            }
+            completedAbruptly = false;
+        } finally {
+            processWorkerExit(w, completedAbruptly);
+        }
+    }
+
+
+    /**
+     * Performs blocking or timed wait for a task, depending on
+     * current configuration settings, or returns null if this worker
+     * must exit because of any of:
+     * 1. There are more than maximumPoolSize workers (due to
+     *    a call to setMaximumPoolSize).
+     * 2. The pool is stopped.
+     * 3. The pool is shutdown and the queue is empty.
+     * 4. This worker timed out waiting for a task, and timed-out
+     *    workers are subject to termination (that is,
+     *    {@code allowCoreThreadTimeOut || workerCount > corePoolSize})
+     *    both before and after the timed wait, and if the queue is
+     *    non-empty, this worker is not the last thread in the pool.
+     *
+     * @return task, or null if the worker must exit, in which case
+     *         workerCount is decremented
+     */
+    private Runnable getTask() {
+        boolean timedOut = false; // Did the last poll() time out? 上次执行poll是否超时
+
+        for (;;) {
+            int c = ctl.get();
+            int rs = runStateOf(c);
+
+            // Check if queue empty only if necessary.
+            if (rs >= SHUTDOWN && (rs >= STOP || workQueue.isEmpty())) {
+                decrementWorkerCount();//减少当前worker数量并返回null
+                return null;
+            }
+
+            int wc = workerCountOf(c);
+
+            // Are workers subject to culling? worker是否会被淘汰
+            boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
+
+            if ((wc > maximumPoolSize || (timed && timedOut))
+                    && (wc > 1 || workQueue.isEmpty())) {
+                //(当前线程数>最大线程数 || (允许淘汰线程 && 已超时)) && (当前线程数>1 || 队列为空) 
+                if (compareAndDecrementWorkerCount(c)) //减少当前worker数量并返回null
+                    return null;
+                continue;
+            }
+
+            try {
+                //如果没有任务，线程在此处，阻塞到workQueue该阻塞队列上。
+                // 如果该线程可以被淘汰，则使用带超时时间的poll方法，否则使用take一直阻塞到有任务添加到queue中。
+                Runnable r = timed ?
+                        workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
+                        workQueue.take();
+                if (r != null)
+                    return r;
+                timedOut = true;
+            } catch (InterruptedException retry) {
+                timedOut = false;
+            }
+        }
+    }
+
+    /**
+     * Performs cleanup and bookkeeping for a dying worker. Called
+     * only from worker threads. Unless completedAbruptly is set,
+     * assumes that workerCount has already been adjusted to account
+     * for exit.  This method removes thread from worker set, and
+     * possibly terminates the pool or replaces the worker if either
+     * it exited due to user task exception or if fewer than
+     * corePoolSize workers are running or queue is non-empty but
+     * there are no workers.
+     *
+     * @param w the worker
+     * @param completedAbruptly if the worker died due to user exception
+     */
+    private void processWorkerExit(Worker w, boolean completedAbruptly) {
+        if (completedAbruptly) // If abrupt, then workerCount wasn't adjusted
+            decrementWorkerCount();
+
+        final ReentrantLock mainLock = this.mainLock;
+        mainLock.lock();
+        try {
+            completedTaskCount += w.completedTasks;
+            workers.remove(w);
+        } finally {
+            mainLock.unlock();
+        }
+
+        tryTerminate();
+
+        int c = ctl.get();
+        if (runStateLessThan(c, STOP)) {
+            if (!completedAbruptly) {
+                int min = allowCoreThreadTimeOut ? 0 : corePoolSize;
+                if (min == 0 && ! workQueue.isEmpty())
+                    min = 1;
+                if (workerCountOf(c) >= min)
+                    return; // replacement not needed
+            }
+            addWorker(null, false);
+        }
     }
 }
 ```

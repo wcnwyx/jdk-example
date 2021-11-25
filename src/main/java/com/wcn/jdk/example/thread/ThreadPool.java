@@ -6,10 +6,10 @@ import java.util.concurrent.TimeUnit;
 
 public class ThreadPool {
     public static void main(String[] args) throws InterruptedException {
-        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(1, 3, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
+        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(1, 3, 1, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
         while(true){
             threadPoolExecutor.submit(new TestRunnable());
-            Thread.sleep(1000);
+            Thread.sleep(2000);
         }
     }
 
@@ -17,7 +17,7 @@ public class ThreadPool {
 
         @Override
         public void run() {
-            System.out.println(Thread.currentThread().getName()+" |"+Thread.currentThread().getState());
+            System.out.println(Thread.currentThread().getName()+" |"+Thread.currentThread().hashCode());
         }
     }
 }

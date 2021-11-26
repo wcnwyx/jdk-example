@@ -1052,18 +1052,28 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * Performs blocking or timed wait for a task, depending on
      * current configuration settings, or returns null if this worker
      * must exit because of any of:
+     * 根据当前的配置设置，执行任务的阻塞或定时等待，如果由于以下任何原因必须退出此工作进程，则返回null：
      * 1. There are more than maximumPoolSize workers (due to
      *    a call to setMaximumPoolSize).
+     *    线程数超过了maximumPoolSize。
+     *
      * 2. The pool is stopped.
+     *    pool已停止。
+     *
      * 3. The pool is shutdown and the queue is empty.
+     *    pool被关闭并且queue是空的。
+     *
      * 4. This worker timed out waiting for a task, and timed-out
      *    workers are subject to termination (that is,
      *    {@code allowCoreThreadTimeOut || workerCount > corePoolSize})
      *    both before and after the timed wait, and if the queue is
      *    non-empty, this worker is not the last thread in the pool.
+     *    此worker在等待任务时超时，超时的worker在超时等待前后都会终止，
+     *    如果队列非空，则此工作线程不是池中的最后一个线程。
      *
      * @return task, or null if the worker must exit, in which case
      *         workerCount is decremented
+     *         如果worker必须退出则返回null，这种情况下workerCount将递减
      */
     private Runnable getTask() {
         boolean timedOut = false; // Did the last poll() time out? 上次执行poll是否超时
@@ -1115,9 +1125,15 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * it exited due to user task exception or if fewer than
      * corePoolSize workers are running or queue is non-empty but
      * there are no workers.
+     * 为即将死亡的worker进行清理和簿记。仅从worker线程调用。
+     * 除非设置了completedAbruptly，否则假定workerCount已被调整以考虑退出。
+     * 此方法从工作线程集中删除线程，如果由于用户任务异常而退出工作线程，
+     * 或者如果正在运行的工作线程少于corePoolSize，或者队列为非空但没有工作线程，
+     * 则可能终止池或替换工作线程。
      *
      * @param w the worker
      * @param completedAbruptly if the worker died due to user exception
+     * 							 worker是否由于用户任务异常导致死亡
      */
     private void processWorkerExit(Worker w, boolean completedAbruptly) {
         if (completedAbruptly) // If abrupt, then workerCount wasn't adjusted
@@ -1144,6 +1160,107 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     return; // replacement not needed
             }
             addWorker(null, false);
+        }
+    }
+}
+```
+
+##四：关闭逻辑
+```java
+public class ThreadPoolExecutor extends AbstractExecutorService {
+
+    /**
+     * Initiates an orderly shutdown in which previously submitted
+     * tasks are executed, but no new tasks will be accepted.
+     * Invocation has no additional effect if already shut down.
+     * 启动有序的关闭，执行以前已提交的任务，但不接受新任务。
+     * 如果调用时已经关闭，没有其它影响。
+     *
+     * <p>This method does not wait for previously submitted tasks to
+     * complete execution.  Use {@link #awaitTermination awaitTermination}
+     * to do that.
+     * 此方法不会等待以前提交的任务完成执行。
+     * 使用awaitTermination来完成此操作。
+     *
+     * @throws SecurityException {@inheritDoc}
+     */
+    public void shutdown() {
+        final ReentrantLock mainLock = this.mainLock;
+        mainLock.lock();
+        try {
+            //检查是否有权限关闭线程
+            checkShutdownAccess();
+            //状态改为SHUTDOWN
+            advanceRunState(SHUTDOWN);
+            //中断空闲的worker
+            interruptIdleWorkers();
+            // 该类中onShutdown为空，啥都不执行
+            onShutdown(); // hook for ScheduledThreadPoolExecutor
+        } finally {
+            mainLock.unlock();
+        }
+        tryTerminate();
+    }
+
+    /**
+     * Common form of interruptIdleWorkers, to avoid having to
+     * remember what the boolean argument means.
+     */
+    private void interruptIdleWorkers() {
+        interruptIdleWorkers(false);
+    }
+
+    /**
+     * Interrupts threads that might be waiting for tasks (as
+     * indicated by not being locked) so they can check for
+     * termination or configuration changes. Ignores
+     * SecurityExceptions (in which case some threads may remain
+     * uninterrupted).
+     * 中断可能正在等待任务的线程（如未锁定所示），
+     * 以便它们可以检查终止或配置更改。
+     * 忽略SecurityExceptions（在这种情况下，某些线程可能会保持不中断）。
+     *
+     * @param onlyOne If true, interrupt at most one worker. This is
+     * called only from tryTerminate when termination is otherwise
+     * enabled but there are still other workers.  In this case, at
+     * most one waiting worker is interrupted to propagate shutdown
+     * signals in case all threads are currently waiting.
+     * Interrupting any arbitrary thread ensures that newly arriving
+     * workers since shutdown began will also eventually exit.
+     * To guarantee eventual termination, it suffices to always
+     * interrupt only one idle worker, but shutdown() interrupts all
+     * idle workers so that redundant workers exit promptly, not
+     * waiting for a straggler task to finish.
+     * 如果是true，最多中断一个worker。
+     * 只有在以其他方式启用终止但仍有其他worker时，才从tryTerminate调用此函数。
+     * 在这种情况下，如果所有线程当前都在等待，
+     * 则最多会中断一个等待的工作线程来传播关闭信号。
+     * 中断任意线程可以确保自关闭开始以来新到达的worker最终也会退出。
+     * 为了保证最终的终止，总是只中断一个空闲的工作进程就足够了，
+     * 但是shutdown()会中断所有空闲的工作进程，
+     * 这样多余的工作进程就会迅速退出，而不是等待一个散乱的任务完成。
+     */
+    private void interruptIdleWorkers(boolean onlyOne) {
+        final ReentrantLock mainLock = this.mainLock;
+        mainLock.lock();
+        try {
+            for (Worker w : workers) {
+                Thread t = w.thread;
+                if (!t.isInterrupted() && w.tryLock()) {
+                    //未被中断，并且tryLock成功表示未在执行任务（执行的时候会先lock的）
+                    try {
+                        t.interrupt();
+                    } catch (SecurityException ignore) {
+                    } finally {
+                        w.unlock();
+                    }
+                }
+                if (onlyOne)
+                    //如果是就中断一个，break出去不再继续循环
+                    break;
+            }
+        } finally {
+            mainLock.unlock();
         }
     }
 }

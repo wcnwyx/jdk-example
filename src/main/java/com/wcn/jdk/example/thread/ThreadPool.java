@@ -7,10 +7,13 @@ import java.util.concurrent.TimeUnit;
 public class ThreadPool {
     public static void main(String[] args) throws InterruptedException {
         ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(1, 3, 1, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
-        while(true){
-            threadPoolExecutor.submit(new TestRunnable());
-            Thread.sleep(2000);
-        }
+//        while(true){
+//            threadPoolExecutor.submit(new TestRunnable());
+//            Thread.sleep(2000);
+//        }
+        threadPoolExecutor.submit(new TestRunnable());
+        Thread.sleep(1000);
+        threadPoolExecutor.shutdown();
     }
 
     public static class TestRunnable implements Runnable{

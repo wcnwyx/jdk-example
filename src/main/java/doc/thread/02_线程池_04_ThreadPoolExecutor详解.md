@@ -1192,7 +1192,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             checkShutdownAccess();
             //状态改为SHUTDOWN
             advanceRunState(SHUTDOWN);
-            //中断空闲的worker
+            //中断空闲的worker(注意，正在执行任务的worker是不会被中断的)
             interruptIdleWorkers();
             // 该类中onShutdown为空，啥都不执行
             onShutdown(); // hook for ScheduledThreadPoolExecutor
@@ -1216,7 +1216,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * termination or configuration changes. Ignores
      * SecurityExceptions (in which case some threads may remain
      * uninterrupted).
-     * 中断可能正在等待任务的线程（如未锁定所示），
+     * 中断可能正在等待任务的线程（表示未被锁定--如果在执行任务，worker首先会将自己进行锁定，runWorker中的逻辑），
      * 以便它们可以检查终止或配置更改。
      * 忽略SecurityExceptions（在这种情况下，某些线程可能会保持不中断）。
      *
@@ -1247,7 +1247,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             for (Worker w : workers) {
                 Thread t = w.thread;
                 if (!t.isInterrupted() && w.tryLock()) {
-                    //未被中断，并且tryLock成功表示未在执行任务（执行的时候会先lock的）
+                    //未被中断，并且tryLock成功表示未在执行任务（runWorker中执行任务的时候会先lock的）
                     try {
                         t.interrupt();
                     } catch (SecurityException ignore) {
@@ -1261,6 +1261,62 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             }
         } finally {
             mainLock.unlock();
+        }
+    }
+
+    /**
+     * Transitions to TERMINATED state if either (SHUTDOWN and pool
+     * and queue empty) or (STOP and pool empty).  If otherwise
+     * eligible to terminate but workerCount is nonzero, interrupts an
+     * idle worker to ensure that shutdown signals propagate. This
+     * method must be called following any action that might make
+     * termination possible -- reducing worker count or removing tasks
+     * from the queue during shutdown. The method is non-private to
+     * allow access from ScheduledThreadPoolExecutor.
+     * 如果（状态为SHUTDOWN且池和队列为空）或（状态为STOP且池为空），则转换为TERMINALTED状态。
+     * 如果有资格终止，但workerCount不为零，则中断一个空闲worker，以确保关闭信号传播。
+     * 必须在可能导致终止的任何操作之后调用此方法 -- 减少worker数量或者关闭期间从queue中移除任务。
+     * 该方法是非私有的，允许从ScheduledThreadPoolExecutor进行访问。
+     * 
+     * 该方法是最终终止线程池的方法，
+     * 状态变化从SHUTDOWN->TIDYING->TERMINATED 或者 STOP->TIDYING->TERMINATED
+     */
+    final void tryTerminate() {
+        for (;;) {
+            int c = ctl.get();
+            if (isRunning(c) ||
+                    runStateAtLeast(c, TIDYING) ||
+                    (runStateOf(c) == SHUTDOWN && ! workQueue.isEmpty()))
+                //isRuning(c) 如果是RUNNING状态，则返回退出，不终止
+                //runStateAtLeast(c,TIDYING) 如果状态至少是TIDYING，就是说状态为TIDYING或者TERMINATED，则返回退出。
+                // 如果为TIDYING表示已经有一个线程调用该方法走到后面的逻辑了，该线程就退出不用处理了；如果为TERMINATED表示已经终止了，直接退出。
+                //runStateOf(c) == SHUTDOWN && ! workQueue.isEmpty() SHUTDOWN状态是允许将队列中的任务执行完的，所以不能终止，则返回退出。
+                return;
+            
+            //过了上面的if走到这里，表明可以终止了
+            //原因1：调用shutdown，目前状态为SHUTDOWN，并且queue为空了。
+            //原因2：调用shutdownNow，目前状态是STOP
+            if (workerCountOf(c) != 0) { // Eligible to terminate
+                interruptIdleWorkers(ONLY_ONE);
+                return;
+            }
+
+            final ReentrantLock mainLock = this.mainLock;
+            mainLock.lock();
+            try {
+                if (ctl.compareAndSet(c, ctlOf(TIDYING, 0))) {
+                    try {
+                        terminated();
+                    } finally {
+                        ctl.set(ctlOf(TERMINATED, 0));
+                        termination.signalAll();
+                    }
+                    return;
+                }
+            } finally {
+                mainLock.unlock();
+            }
+            // else retry on failed CAS
         }
     }
 }

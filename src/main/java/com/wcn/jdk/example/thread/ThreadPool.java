@@ -12,15 +12,29 @@ public class ThreadPool {
 //            Thread.sleep(2000);
 //        }
         threadPoolExecutor.submit(new TestRunnable());
-        Thread.sleep(1000);
         threadPoolExecutor.shutdown();
+        for(int i=0;i<=100;i++){
+            try {
+                Thread.sleep(1000);
+                System.out.println(threadPoolExecutor);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     public static class TestRunnable implements Runnable{
 
         @Override
         public void run() {
-            System.out.println(Thread.currentThread().getName()+" |"+Thread.currentThread().hashCode());
+            for(int i=0;i<=100;i++){
+                try {
+                    Thread.sleep(1000);
+                    System.out.println("run. i="+i);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
         }
     }
 }

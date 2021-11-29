@@ -83,7 +83,7 @@
  * #prestartAllCoreThreads}.  You probably want to prestart threads if
  * you construct the pool with a non-empty queue. </dd>
  * 
- * 默认情况下，只有在新任务到达时才最初创建和启动核心线程，但这可以使用方法 prestartCoreThread 或 prestartAllCoreThreads 动态覆盖。
+ * 默认情况下，只有在新任务到达时才初始创建和启动核心线程，但这可以使用方法 prestartCoreThread 或 prestartAllCoreThreads 动态覆盖。
  * 如果您使用非空队列构造池，您可能想要预启动线程
  *
  * <dt>Creating new threads</dt>
@@ -175,7 +175,11 @@
  * avoid rejection of new submitted tasks. This in turn admits the
  * possibility of unbounded thread growth when commands continue to
  * arrive on average faster than they can be processed.  </li>
- * 工作队列的一个很好的默认选择是 SynchronousQueue ，它将任务交给线程而不用其他方式保留它们。
+ * 直接传递。工作队列的一个很好的默认选择是 SynchronousQueue ，它将任务交给线程而不用其他方式保留它们。
+ * 在这里，如果没有线程可以立即运行任务，则尝试将任务排队会失败，因此将构造一个新线程。
+ * 此策略在处理可能具有内部依赖关系的请求集时避免锁定。
+ * 直接传递通常需要无限的MaximumPoolSize，以避免拒绝新提交的任务。
+ * 这继而允许线程的无限增长（当任务继续以平均快于其处理速度的速度到达时）。
  *
  * <li><em> Unbounded queues.</em> Using an unbounded queue (for
  * example a {@link LinkedBlockingQueue} without a predefined
@@ -189,6 +193,12 @@
  * transient bursts of requests, it admits the possibility of
  * unbounded work queue growth when commands continue to arrive on
  * average faster than they can be processed.  </li>
+ * 无界队列。使用一个无界队列（例如一个未预定义容量的LinkedBlockingQueue)，
+ * 将导致新任务在所有corePoolSize线程忙时在队列中等待。
+ * 因此，创建的线程不会超过corePoolSize。（因此，maximumPoolSize的值没有任何影响。）
+ * 当每个任务完全独立于其他任务时，这可能是合适的，因此任务不会影响其他任务的执行；
+ * 例如，在网页服务器中。虽然这种排队方式有助于消除瞬时的请求突发，
+ * 但当命令继续以平均比处理速度更快的速度到达时，工作队列可能会无限增长。
  *
  * <li><em>Bounded queues.</em> A bounded queue (for example, an
  * {@link ArrayBlockingQueue}) helps prevent resource exhaustion when
@@ -202,12 +212,19 @@
  * generally requires larger pool sizes, which keeps CPUs busier but
  * may encounter unacceptable scheduling overhead, which also
  * decreases throughput.  </li>
+ * 有界队列。有界队列（例如，ArrayBlockingQueue）在与有限的maximumPoolSizes
+ * 一起使用时有助于防止资源耗尽，但可能更难优化和控制。
+ * 队列大小和最大池大小可以相互权衡：使用大型队列和小型池可以最大限度地
+ * 减少CPU使用、操作系统资源和上下文切换开销，但也可能导致人为的低吞吐量。
+ * 如果任务经常阻塞（例如，如果它们是I/O绑定的），系统可能能够为更多的线程安排时间，而不是您允许的线程。
+ * 使用小队列通常需要更大的池大小，这使CPU更繁忙，但可能会遇到不可接受的调度开销，这也会降低吞吐量。
  *
  * </ol>
  *
  * </dd>
  *
  * <dt>Rejected tasks</dt>
+ * 拒绝的任务
  *
  * <dd>New tasks submitted in method {@link #execute(Runnable)} will be
  * <em>rejected</em> when the Executor has been shut down, and also when
@@ -217,25 +234,35 @@
  * RejectedExecutionHandler#rejectedExecution(Runnable, ThreadPoolExecutor)}
  * method of its {@link RejectedExecutionHandler}.  Four predefined handler
  * policies are provided:
+ * 当执行器已关闭时，以及当执行器对最大线程和工作队列容量使用有限边界且已饱和时，
+ * 在方法execute(Runnable)中提交的新任务将被拒绝。
+ * 在这两种情况下，execute方法调用其RejectedExecutionHandler的rejectedExecution()方法。
+ * 提供四个预定义的策略处理器：
  *
  * <ol>
  *
  * <li> In the default {@link ThreadPoolExecutor.AbortPolicy}, the
  * handler throws a runtime {@link RejectedExecutionException} upon
  * rejection. </li>
+ * 在默认的AbortPolicy中，处理程序在拒绝时抛出运行时RejectedExecutionException。
  *
  * <li> In {@link ThreadPoolExecutor.CallerRunsPolicy}, the thread
  * that invokes {@code execute} itself runs the task. This provides a
  * simple feedback control mechanism that will slow down the rate that
  * new tasks are submitted. </li>
+ * 在CallerRunsPolicy中，调用execute本身的线程运行任务。
+ * 这提供了一种简单的反馈控制机制，可以降低提交新任务的速度。
  *
  * <li> In {@link ThreadPoolExecutor.DiscardPolicy}, a task that
  * cannot be executed is simply dropped.  </li>
+ * 在DiscardPolicy中，无法执行的任务被简单地丢弃。
  *
  * <li>In {@link ThreadPoolExecutor.DiscardOldestPolicy}, if the
  * executor is not shut down, the task at the head of the work queue
  * is dropped, and then execution is retried (which can fail again,
  * causing this to be repeated.) </li>
+ * 在DiscardOldestPolicy中，如果未关闭执行器，则会丢弃工作队列头部的任务，
+ * 然后重试执行（这可能再次失败，导致重复执行）
  *
  * </ol>
  *
@@ -243,8 +270,11 @@
  * RejectedExecutionHandler} classes. Doing so requires some care
  * especially when policies are designed to work only under particular
  * capacity or queuing policies. </dd>
+ * 可以定义和使用其他类型的RejectedExecutionHandler类。
+ * 这样做需要一定的谨慎，特别是当策略设计为仅在特定容量或排队策略下工作时。
  *
  * <dt>Hook methods</dt>
+ * 钩子方法
  *
  * <dd>This class provides {@code protected} overridable
  * {@link #beforeExecute(Thread, Runnable)} and
@@ -255,11 +285,16 @@
  * Additionally, method {@link #terminated} can be overridden to perform
  * any special processing that needs to be done once the Executor has
  * fully terminated.
+ * 此类提供了protected的可重写的
+ * beforeExecute(Thread, Runnable)和
+ * afterExecute(Runnable, Throwable)方法，这些方法在每个任务执行之前和之后都会被调用。
  *
  * <p>If hook or callback methods throw exceptions, internal worker
  * threads may in turn fail and abruptly terminate.</dd>
+ * 如果钩子或回调方法抛出异常，内部工作线程可能会失败并突然终止。
  *
  * <dt>Queue maintenance</dt>
+ * 队列维护
  *
  * <dd>Method {@link #getQueue()} allows access to the work queue
  * for purposes of monitoring and debugging.  Use of this method for
@@ -267,6 +302,9 @@
  * {@link #remove(Runnable)} and {@link #purge} are available to
  * assist in storage reclamation when large numbers of queued tasks
  * become cancelled.</dd>
+ * 方法getQueue()允许访问工作队列以进行监视和调试。
+ * 强烈反对将此方法用于任何其他目的。
+ * 提供的两种方法，remove(Runnable)和purge可用于在取消大量排队的任务时帮助进行存储回收。
  *
  * <dt>Finalization</dt>
  *
@@ -277,16 +315,25 @@
  * that unused threads eventually die, by setting appropriate
  * keep-alive times, using a lower bound of zero core threads and/or
  * setting {@link #allowCoreThreadTimeOut(boolean)}.  </dd>
+ * 程序中不再引用且没有剩余线程的池将自动shutdown。
+ * 如果您希望确保即使用户忘记调用shutdown也能回收未引用的池，
+ * 那么您必须通过设置适当的keep-alive时间、使用零核心线程的下限
+ * 和/或设置allowCoreThreadTimeOut(boolean)。来安排未使用的线程最终死亡。
  *
  * </dl>
  *
- * <p><b>Extension example</b>. Most extensions of this class
+ * <p><b>Extension example</b>. 
+ * 扩展示例
+ *
+ * Most extensions of this class
  * override one or more of the protected hook methods. For example,
  * here is a subclass that adds a simple pause/resume feature:
+ * 此类的大多数扩展重写一个或多个受保护的钩子方法。
+ * 例如，下面是一个子类，它添加了一个简单的暂停/恢复功能：
  *
  *  <pre> {@code
  * class PausableThreadPoolExecutor extends ThreadPoolExecutor {
- *   private boolean isPaused;
+ *   private boolean isPaused;//表示是否暂停
  *   private ReentrantLock pauseLock = new ReentrantLock();
  *   private Condition unpaused = pauseLock.newCondition();
  *
@@ -296,7 +343,7 @@
  *     super.beforeExecute(t, r);
  *     pauseLock.lock();
  *     try {
- *       while (isPaused) unpaused.await();
+ *       while (isPaused) unpaused.await(); //如果已暂停，等在Condition上
  *     } catch (InterruptedException ie) {
  *       t.interrupt();
  *     } finally {
@@ -307,7 +354,7 @@
  *   public void pause() {
  *     pauseLock.lock();
  *     try {
- *       isPaused = true;
+ *       isPaused = true;//设置暂停标志
  *     } finally {
  *       pauseLock.unlock();
  *     }
@@ -317,7 +364,7 @@
  *     pauseLock.lock();
  *     try {
  *       isPaused = false;
- *       unpaused.signalAll();
+ *       unpaused.signalAll();//恢复，则唤醒所有等待在Condition上的线程
  *     } finally {
  *       pauseLock.unlock();
  *     }
@@ -1030,11 +1077,16 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                 // requires a recheck in second case to deal with
                 // shutdownNow race while clearing interrupt
                 // 如果pool正在停止，确保线程已经被中断；否则，确保线程没有被中断。
-                // ???
+                // 这需要在第二种情况下进行重新检查，以在清除中断的同时处理与shutdownNow的竞争
+                // 啥意思呢? 就是说可能执行到这里的时候发现被shutdownNow，状态已经为STOP了，要重新中断线程。
+                // 那为什么shutdownNow了，还能走到这里呢？总的来说是因为shutdownNow和runWorker在两个线程里几乎同时执行。
+                // 原因1： shutdownNow只是中断已启动的线程，如果新的worker还未第一次unlock，state还是-1，就不会被中断。
+                // 原因2： 在shutdownNow的drainQueue之前，getTask已经拿到了任务。
                 if ((runStateAtLeast(ctl.get(), STOP) ||
-                        (Thread.interrupted() &&
+                        (Thread.interrupted() && //该方法是会clear掉中断状态的
                                 runStateAtLeast(ctl.get(), STOP))) &&
                         !wt.isInterrupted())
+                    //重新中断线程
                     wt.interrupt();
                 try {
                     beforeExecute(wt, task);
@@ -1440,7 +1492,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             //execute的时候也就不会再往里offer了，即使临界状态offer进去了，也会再次判断给移除掉。
             tasks = drainQueue();
         } finally {
-            mainLock.unlock();AQS
+            mainLock.unlock();
         }
         //尝试终止，和shutdown一样，上面已经分析过了
         tryTerminate();
@@ -1459,7 +1511,8 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         mainLock.lock();
         try {
             for (Worker w : workers)
-                //只中断已启动的线程，这里就和runWorker中的又判断是否时STOP状态的逻辑呼应上了。
+                //只中断已启动的线程，这里就和runWorker中的再次判断是否时STOP状态的逻辑呼应上了。
+                //可能有些线程这是还未启动，然后立即又被启动了，就是shutdownNow和runWorker方法几乎同时执行导致。
                 w.interruptIfStarted();
         } finally {
             mainLock.unlock();

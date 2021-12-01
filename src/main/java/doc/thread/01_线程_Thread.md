@@ -1,6 +1,6 @@
 ##线程的状态
 操作系统的进程状态分为： 就绪、运行中、阻塞、终止。阻塞状态只能先变为就绪，再变为运行中。
-```java
+```
 public enum State {
     /**
      * Thread state for a thread which has not yet started.
@@ -85,9 +85,8 @@ public enum State {
 ## sleep方法  
 1. 让线程睡眠指定的毫秒数。
 2. sleep不会失去任何监视器的所有权。
-3. 可以被中断。
-4当被中断并抛出异常时，线程的interrupted状态会被清除。
-```java
+3. 可以被中断。当被中断并抛出异常时，线程的interrupted状态会被清除。
+```
 /**
  * Causes the currently executing thread to sleep (temporarily cease
  * execution) for the specified number of milliseconds, subject to
@@ -112,7 +111,10 @@ public static native void sleep(long millis) throws InterruptedException;
 ```
 
 ## join方法
-```java
+1. b线程内部调用a.join()，说明b要等待a线程终止后再继续执行。
+2. a线程终止后，虚拟机底层会调用a.notifyAll方法将b唤醒。
+3. 可以被中断，可以被中断。当被中断并抛出异常时，线程的interrupted状态会被清除。
+```
 /**
  * Waits at most {@code millis} milliseconds for this thread to
  * die. A timeout of {@code 0} means to wait forever.
@@ -167,7 +169,7 @@ public final synchronized void join(long millis) throws InterruptedException {
 ## yield方法
 该方法就是说我让出一下cpu的使用权，但是我还是就绪状态，如果没有其它竞争者获得CPU，
 CPU的执行权还是会给我，如果有其它竞争者获得CPU，那么就先让它执行。
-```java
+```
 /**
  * A hint to the scheduler that the current thread is willing to yield
  * its current use of a processor. The scheduler is free to ignore this
@@ -191,4 +193,87 @@ CPU的执行权还是会给我，如果有其它竞争者获得CPU，那么就�
  * 在ReentrantLock的内部类ConditionObject的transferAfterCancelledWait方法里就有使用。
  */
 public static native void yield();
+```
+
+## interrupt
+1. 线程阻塞在不同的地方，抛出的异常是不一样的。
+2. 线程阻塞在不同的地方，中断状态有的清除有的不清除。
+```
+
+/**
+ * Interrupts this thread.
+ * 中断该线程。
+ *
+ * <p> Unless the current thread is interrupting itself, which is
+ * always permitted, the {@link #checkAccess() checkAccess} method
+ * of this thread is invoked, which may cause a {@link
+ * SecurityException} to be thrown.
+ * 除非当前线程中断自身（这是始终允许的），否则将调用此线程的checkAccess方法，
+ * 这可能会导致抛出SecurityException。
+ *
+ * <p> If this thread is blocked in an invocation of the {@link
+ * Object#wait() wait()}, {@link Object#wait(long) wait(long)}, or {@link
+ * Object#wait(long, int) wait(long, int)} methods of the {@link Object}
+ * class, or of the {@link #join()}, {@link #join(long)}, {@link
+ * #join(long, int)}, {@link #sleep(long)}, or {@link #sleep(long, int)},
+ * methods of this class, then its interrupt status will be cleared and it
+ * will receive an {@link InterruptedException}.
+ * 如果在调用Object类的wait()、wait(long)或wait(long, int)方法时阻塞了该线程，
+ * 或者在该类的join()、join(long)、join(long, int)、sleep(long)、sleep(long, int)方法阻塞，
+ * 然后它的中断状态将被清除，它将收到一个InterruptedException。
+ *
+ * <p> If this thread is blocked in an I/O operation upon an {@link
+ * java.nio.channels.InterruptibleChannel InterruptibleChannel}
+ * then the channel will be closed, the thread's interrupt
+ * status will be set, and the thread will receive a {@link
+ * java.nio.channels.ClosedByInterruptException}.
+ * 如果此线程在java.nio.channels.interruptablechannel上的I/O操作中被阻塞，
+ * 然后通道将被关闭，线程的中断状态将被设置，线程将收到java.nio.channels.closedbyinteruptexception。
+ *
+ * <p> If this thread is blocked in a {@link java.nio.channels.Selector}
+ * then the thread's interrupt status will be set and it will return
+ * immediately from the selection operation, possibly with a non-zero
+ * value, just as if the selector's {@link
+ * java.nio.channels.Selector#wakeup wakeup} method were invoked.
+ * 如果该线程在ava.nio.channels.Selector中被阻塞，那么该线程的中断状态将被设置，
+ * 并且它将立即从选择操作返回，可能带有非零值，
+ * 就像调用了选择器的java.nio.channels.Selector#wakeup方法一样。
+ *
+ * <p> If none of the previous conditions hold then this thread's interrupt
+ * status will be set. </p>
+ * 如果前面的条件都不成立，那么将设置该线程的中断状态。
+ *
+ * <p> Interrupting a thread that is not alive need not have any effect.
+ * 中断一个非活动线程不需要有任何效果。
+ *
+ * @throws  SecurityException
+ *          if the current thread cannot modify this thread
+ *
+ * @revised 6.0
+ * @spec JSR-51
+ */
+public void interrupt() {
+    if (this != Thread.currentThread())
+        checkAccess();
+
+    synchronized (blockerLock) {
+        Interruptible b = blocker;
+        if (b != null) {
+            interrupt0();           // Just to set the interrupt flag
+            b.interrupt(this);
+            return;
+        }
+    }
+    interrupt0();
+}
+
+
+/**
+ * Tests if some Thread has been interrupted.  The interrupted state
+ * is reset or not based on the value of ClearInterrupted that is
+ * passed.
+ * 测试线程是否已经中断。中断状态是否重置取决于传递的ClearInterrupted值。
+ */
+private native boolean isInterrupted(boolean ClearInterrupted);
+    
 ```

@@ -9,7 +9,7 @@ public class Thread_02_Join {
                 try {
                     Thread.sleep(3*1000);
                 } catch (InterruptedException e) {
-                    System.out.println(Thread.currentThread().getName()+" interrupted");
+                    System.out.println(Thread.currentThread().getName()+" interrupted:"+ Thread.currentThread().isInterrupted());
                 }
                 System.out.println("after sleep");
             }

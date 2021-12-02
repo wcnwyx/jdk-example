@@ -1,4 +1,4 @@
-#Condition接口定义
+#Condition接口定义  
 ```java
 /**
  * {@code Condition} factors out the {@code Object} monitor

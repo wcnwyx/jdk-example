@@ -1,3 +1,6 @@
+# Hashtable 源码分析  
+
+##一： 类注释预览  
 ```java
 /**
  * This class implements a hash table, which maps keys to values. Any
@@ -178,20 +181,6 @@ public class Hashtable<K,V>
      */
     private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
 
-}
-```
-总结：
-1. Hashtable是从1.0版本就有的一个Hash表实现。
-2. 用于键值对的映射数据。
-3. 两个主要的参数 初始容量 和 负载因子，一个消耗性能的方法rehash用于扩容。
-4. 线程安全的。
-
-##构造方法
-默认的初始容量时11，负载因子是.75
-```java
-public class Hashtable<K,V>
-    extends Dictionary<K,V>
-    implements Map<K,V>, Cloneable, java.io.Serializable {
     /**
      * Constructs a new, empty hashtable with the specified initial
      * capacity and the specified load factor.
@@ -214,62 +203,16 @@ public class Hashtable<K,V>
         table = new Entry<?,?>[initialCapacity];
         threshold = (int)Math.min(initialCapacity * loadFactor, MAX_ARRAY_SIZE + 1);
     }
-
-    /**
-     * Constructs a new, empty hashtable with the specified initial capacity
-     * and default load factor (0.75).
-     *
-     * @param     initialCapacity   the initial capacity of the hashtable.
-     * @exception IllegalArgumentException if the initial capacity is less
-     *              than zero.
-     */
-    public Hashtable(int initialCapacity) {
-        this(initialCapacity, 0.75f);
-    }
-
-    /**
-     * Constructs a new, empty hashtable with a default initial capacity (11)
-     * and load factor (0.75).
-     */
-    public Hashtable() {
-        this(11, 0.75f);
-    }
-
-    /**
-     * Constructs a new hashtable with the same mappings as the given
-     * Map.  The hashtable is created with an initial capacity sufficient to
-     * hold the mappings in the given Map and a default load factor (0.75).
-     *
-     * @param t the map whose mappings are to be placed in this map.
-     * @throws NullPointerException if the specified map is null.
-     * @since   1.2
-     */
-    public Hashtable(Map<? extends K, ? extends V> t) {
-        this(Math.max(2*t.size(), 11), 0.75f);
-        putAll(t);
-    }
-
-    /**
-     * Hashtable bucket collision list entry
-     * hashtable的桶中的列表条目，就是每个键值对的封装。
-     */
-    private static class Entry<K,V> implements Map.Entry<K,V> {
-        final int hash;
-        final K key;
-        V value;
-        Entry<K,V> next;
-
-        protected Entry(int hash, K key, V value, Entry<K,V> next) {
-            this.hash = hash;
-            this.key =  key;
-            this.value = value;
-            this.next = next;
-        }
-    }
 }
 ```
+总结：
+1. Hashtable是从1.0版本就有的一个Hash表实现。
+2. 用于键值对的映射数据。
+3. 两个主要的参数 初始容量 和 负载因子，一个消耗性能的方法rehash用于扩容。
+4. 线程安全的。
 
-## put 、rehash 逻辑    
+
+##二： put 、rehash 逻辑      
 ```java
 public class Hashtable<K,V>
         extends Dictionary<K,V>
@@ -399,3 +342,94 @@ public class Hashtable<K,V>
     }
 }
 ```
+总结：  
+1. put方法是synchronized的，所以线程安全，但效率低下。
+2. put的key和value都不允许为空。
+3. put时，如果key已存在，则更新value，并返回老的value。
+4. put时，先根据key的hash值取模计算出所在的数组位置，然后见该键值对加到该位置的链表的头部。
+5. put方法根据当前哈希表的容量和阈值，当前条目个数>=初始容量*负载因子时，将自动进行扩容。
+6. 扩容直接将容量翻倍，并将已存在的key-value从新hash计算出新的数组位置，从新构建数组和链表，消耗性能。
+
+##三： get、remove逻辑    
+```java
+public class Hashtable<K,V>
+        extends Dictionary<K,V>
+        implements Map<K,V>, Cloneable, java.io.Serializable {
+    
+    /**
+     * Returns the value to which the specified key is mapped,
+     * or {@code null} if this map contains no mapping for the key.
+     * 返回指定键映射到的值，如果此map不包含该键的映射，则返回null。
+     *
+     * <p>More formally, if this map contains a mapping from a key
+     * {@code k} to a value {@code v} such that {@code (key.equals(k))},
+     * then this method returns {@code v}; otherwise it returns
+     * {@code null}.  (There can be at most one such mapping.)
+     * 更正规地说，如果这个map包含一个从键k到值v的映射，使得key.equals(k)，
+     * 那么这个方法返回v；否则返回null。（最多可以有一个这样的映射。）
+     *
+     * @param key the key whose associated value is to be returned
+     * @return the value to which the specified key is mapped, or
+     *         {@code null} if this map contains no mapping for the key
+     * @throws NullPointerException if the specified key is null
+     * @see     #put(Object, Object)
+     */
+    @SuppressWarnings("unchecked")
+    public synchronized V get(Object key) {
+        Entry<?,?> tab[] = table;
+        int hash = key.hashCode();
+        int index = (hash & 0x7FFFFFFF) % tab.length;
+        //先根据hash值计算出所在tab数组中的索引位置，然后依次循环该位置的链表。
+        for (Entry<?,?> e = tab[index] ; e != null ; e = e.next) {
+            if ((e.hash == hash) && e.key.equals(key)) {
+                return (V)e.value;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Removes the key (and its corresponding value) from this
+     * hashtable. This method does nothing if the key is not in the hashtable.
+     * 从此哈希表中删除键（及其对应的值）。
+     * 如果键不在哈希表中，则此方法不执行任何操作。
+     *
+     * @param   key   the key that needs to be removed
+     * @return  the value to which the key had been mapped in this hashtable,
+     *          or <code>null</code> if the key did not have a mapping
+     * @throws  NullPointerException  if the key is <code>null</code>
+     */
+    public synchronized V remove(Object key) {
+        Entry<?,?> tab[] = table;
+        int hash = key.hashCode();
+        int index = (hash & 0x7FFFFFFF) % tab.length;
+        
+        //先根据hash值计算出所在tab数组中的索引位置，然后依次循环该位置的链表。
+        Entry<K,V> e = (Entry<K,V>)tab[index];
+        for(Entry<K,V> prev = null ; e != null ; prev = e, e = e.next) {
+            if ((e.hash == hash) && e.key.equals(key)) {
+                modCount++;
+                if (prev != null) {
+                    //表示该key不是链表的第一个节点。则将本节点的前置节点的next属性赋值于该节点的next（将本节点下链）
+                    prev.next = e.next;
+                } else {
+                    //表示链表的第一个节点就时该key，则直接将额。next放到数组中即可。
+                    tab[index] = e.next;
+                }
+                count--;//总数减1
+                //返回老的value
+                V oldValue = e.value;
+                e.value = null;
+                return oldValue;
+            }
+        }
+        return null;
+    }
+}
+```
+总结：  
+1. get、remove 都是synchronized的，所以线程安全，但效率低下。
+2. 逻辑都很简单，先根据key定位到数组位置，再一次数组内部的链表处理即可。
+
+总体来说Hashtable结构简单，数组+链表形式，put、get、remove都是线程安全的，效率比较低下。

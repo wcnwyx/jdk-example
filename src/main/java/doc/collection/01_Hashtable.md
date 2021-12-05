@@ -1,6 +1,6 @@
 # Hashtable 源码分析  
 
-##一： 类注释预览  
+##一： 类注释及内部变量预览  
 ```java
 /**
  * This class implements a hash table, which maps keys to values. Any

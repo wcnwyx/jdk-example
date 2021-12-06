@@ -4,11 +4,14 @@
  * The map is sorted according to the {@linkplain Comparable natural
  * ordering} of its keys, or by a {@link Comparator} provided at map
  * creation time, depending on which constructor is used.
+ * 基于红黑树的NavigableMap实现。 map根据其键的Comparable进行自然排序，
+ * 或者由map创建时提供的Comparator进行排序，具体取决于使用的构造函数。
  *
  * <p>This implementation provides guaranteed log(n) time cost for the
  * {@code containsKey}, {@code get}, {@code put} and {@code remove}
  * operations.  Algorithms are adaptations of those in Cormen, Leiserson, and
  * Rivest's <em>Introduction to Algorithms</em>.
+ * 此实现为containsKey、get、put和remove操作提供了保证的log(n)时间开销。
  *
  * <p>Note that the ordering maintained by a tree map, like any sorted map, and
  * whether or not an explicit comparator is provided, must be <em>consistent
@@ -22,6 +25,8 @@
  * of a sorted map <em>is</em> well-defined even if its ordering is
  * inconsistent with {@code equals}; it just fails to obey the general contract
  * of the {@code Map} interface.
+ * 请注意，与任何SortedMap一样，如果此Sortedmap要正确实现Map接口，
+ * TreeMap维护的顺序以及是否提供了显式比较器都必须与equals一致。
  *
  * <p><strong>Note that this implementation is not synchronized.</strong>
  * If multiple threads access a map concurrently, and at least one of the

@@ -725,12 +725,16 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * Implements Map.remove and related methods
-     *
+     * 实现Map.remove和相关方法
+     * 
      * @param hash hash for key
      * @param key the key
      * @param value the value to match if matchValue, else ignored
+     *              如果matchValue为true，则value要匹配，否则忽略
      * @param matchValue if true only remove if value is equal
+     *                   如果为true，则只有value相等的时候才删除
      * @param movable if false do not move other nodes while removing
+     *                如果为false，则在删除时不要移动其他节点（树形结构使用）
      * @return the node, or null if none
      */
     final Node<K,V> removeNode(int hash, Object key, Object value,
@@ -738,14 +742,19 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         Node<K,V>[] tab; Node<K,V> p; int n, index;
         if ((tab = table) != null && (n = tab.length) > 0 &&
                 (p = tab[index = (n - 1) & hash]) != null) {
+            //p为该索引位置（链表或树）的第一个节点。
             Node<K,V> node = null, e; K k; V v;
             if (p.hash == hash &&
                     ((k = p.key) == key || (key != null && key.equals(k))))
+                //第一个节点就是该key
                 node = p;
             else if ((e = p.next) != null) {
+                //第一个节点不是该key，并且该索引位置不止一个节点
                 if (p instanceof TreeNode)
+                    //如果为树结构，则采用树的方法找到该方法
                     node = ((TreeNode<K,V>)p).getTreeNode(hash, key);
                 else {
+                    //链表结构，循环找到该key节点，这是p表示该key节点的上一个节点
                     do {
                         if (e.hash == hash &&
                                 ((k = e.key) == key ||
@@ -759,15 +768,16 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             }
             if (node != null && (!matchValue || (v = node.value) == value ||
                     (value != null && value.equals(v)))) {
+                //要到了要删除key的node，并且matchValue也匹配，则删除node
                 if (node instanceof TreeNode)
                     ((TreeNode<K,V>)node).removeTreeNode(this, tab, movable);
                 else if (node == p)
                     tab[index] = node.next;
                 else
                     p.next = node.next;
-                ++modCount;
-                --size;
-                afterNodeRemoval(node);
+                ++modCount;//修改次数增加
+                --size;//条目数量减少
+                afterNodeRemoval(node);//调用钩子方法
                 return node;
             }
         }
@@ -775,3 +785,6 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     }
 }
 ```
+总结：
+1. 这里不考虑树结构的操作（TreeMap再细看）。
+2. get和remove都是先根据key定位到数组的索引位置，然后再操作链表或树进行查询或删除

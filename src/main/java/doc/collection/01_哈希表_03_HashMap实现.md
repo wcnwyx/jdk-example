@@ -78,16 +78,15 @@
  * associated with a key that an instance already contains is not a
  * structural modification.)  This is typically accomplished by
  * synchronizing on some object that naturally encapsulates the map.
- * 请注意，此实现是不同步的。
- * 如果多个线程同时访问一个哈希映射，并且至少有一个线程在结构上修改该映射，那么它必须在外部进行同步。
- * （结构修改是添加或删除一个或多个映射的任何操作；仅更改与实例已包含的键关联的值不是结构修改。）
- * 
- *
  * If no such object exists, the map should be "wrapped" using the
  * {@link Collections#synchronizedMap Collections.synchronizedMap}
  * method.  This is best done at creation time, to prevent accidental
  * unsynchronized access to the map:<pre>
  *   Map m = Collections.synchronizedMap(new HashMap(...));</pre>
+ * 请注意，此实现是不同步的。
+ * 如果多个线程同时访问一个哈希映射，并且至少有一个线程在结构上修改该映射，那么它必须在外部进行同步。
+ * （结构修改是添加或删除一个或多个映射的任何操作；仅更改与实例已包含的键关联的值不是结构修改。）
+ * 这通常是通过在自然封装的某个对象上进行同步来实现的。
  * 如果不存在这样的对象，则应使用Collections.synchronizedMap方法“包装”map。
  * 最好在创建时执行此操作，以防止意外不同步地访问映射：
  * Map m = Collections.synchronizedMap(new HashMap(...));

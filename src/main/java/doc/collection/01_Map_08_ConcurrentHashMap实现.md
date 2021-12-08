@@ -77,12 +77,16 @@
  * 如果可能，最好提供一个大小估计值作为可选的initialCapacity构造函数参数。
  * 另外一个可选的构造函数参数loadFactor提供了一种定制初始表容量的进一步方法，
  * 它指定了在计算为给定数量的元素分配的空间量时要使用的表密度。
+ * 此外，为了与该类的早期版本兼容，构造函数可以选择指定预期的concurrencyLevel作为内部大小调整的附加提示。
+ * 请注意，使用许多具有完全相同的hashCode()的键肯定会降低任何哈希表的性能。
+ * 为了改善影响，当键为Comparable时，此类可以使用键之间的比较顺序来帮助打破联系。
  *
  * <p>A {@link Set} projection of a ConcurrentHashMap may be created
  * (using {@link #newKeySet()} or {@link #newKeySet(int)}), or viewed
  * (using {@link #keySet(Object)} when only keys are of interest, and the
  * mapped values are (perhaps transiently) not used or all take the
  * same mapping value.
+ * 可以创建ConcurrentHashMap的一个集合投影（使用newKeySet()或者newKeySet(int)），
  *
  * <p>A ConcurrentHashMap can be used as scalable frequency map (a
  * form of histogram or multiset) by using {@link
@@ -90,13 +94,19 @@
  * {@link #computeIfAbsent computeIfAbsent}. For example, to add a count
  * to a {@code ConcurrentHashMap<String,LongAdder> freqs}, you can use
  * {@code freqs.computeIfAbsent(k -> new LongAdder()).increment();}
+ * ConcurrentHashMap可以通过使用LongAdder值并通过computeIfAbsent初始化，
+ * 用作可伸缩频率图（直方图或多集的一种形式）。
+ * 例如，要将计数添加到ConcurrentHashMap<String，LongAdder> freqs，
+ * 可以使用freqs.computeIfAbsent(k -> new LongAdder()).increment();
  *
  * <p>This class and its views and iterators implement all of the
  * <em>optional</em> methods of the {@link Map} and {@link Iterator}
  * interfaces.
+ * 此类及其视图和迭代器实现了Map和Iterator接口的所有可选方法。
  *
  * <p>Like {@link Hashtable} but unlike {@link HashMap}, this class
  * does <em>not</em> allow {@code null} to be used as a key or value.
+ * 与Hashtable类似，但与HashMap不同，该类不允许将null用作键或值。
  *
  * <p>ConcurrentHashMaps support a set of sequential and parallel bulk
  * operations that, unlike most {@link Stream} methods, are designed
@@ -113,15 +123,25 @@
  * computation is in progress; and except for forEach actions, should
  * ideally be side-effect-free. Bulk operations on {@link java.util.Map.Entry}
  * objects do not support method {@code setValue}.
+ * ConcurrentHashMaps支持一组顺序和并行批量操作，与大多数Stream方法不同，
+ * 这些操作被设计为安全 且通常合理 地应用于其他线程同时更新的map；
+ * 例如，在计算共享注册表中的值的快照摘要时。
+ * 有三种操作，每种操作有四种形式，接受带有键、值、条目和（键、值）参数和/或返回值的函数。
+ * 因为ConcurrentHashMap的元素没有以任何特定的方式排序，
+ * 并且可以在不同的并行执行中以不同的顺序进行处理，所提供函数的正确性不应取决于任何顺序，
+ * 或在计算过程中可能暂时改变的任何其他对象或值；除forEach作用外，理想情况下应无副作用。
+ * java.util.Map.Entry对象上的批量操作不支持方法setValue。
  *
  * <ul>
  * <li> forEach: Perform a given action on each element.
  * A variant form applies a given transformation on each element
  * before performing the action.</li>
+ * forEach:对每个元素执行给定的操作。变量形式在执行操作之前对每个元素应用给定的转换。
  *
  * <li> search: Return the first available non-null result of
  * applying a given function on each element; skipping further
  * search when a result is found.</li>
+ * search:返回对每个元素应用给定函数的第一个可用非空结果；找到结果时跳过进一步搜索。
  *
  * <li> reduce: Accumulate each element.  The supplied reduction
  * function cannot rely on ordering (more formally, it should be
@@ -215,4 +235,132 @@
  * @param <K> the type of keys maintained by this map
  * @param <V> the type of mapped values
  */
+```
+
+```java
+public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
+    implements ConcurrentMap<K,V>, Serializable {
+
+    /**
+     * Table initialization and resizing control.  When negative, the
+     * table is being initialized or resized: -1 for initialization,
+     * else -(1 + the number of active resizing threads).  Otherwise,
+     * when table is null, holds the initial table size to use upon
+     * creation, or 0 for default. After initialization, holds the
+     * next element count value upon which to resize the table.
+     * 表初始化和调整大小控制。如果为负值，则正在初始化或调整表的大小：
+     * -1用于初始化，否则 -(1+活动调整大小的线程的数量)。
+     * 否则，当table为null时，将保留创建时使用的初始表大小，默认值为0。
+     * 初始化后，保存下一个要调整表大小的元素计数值。
+     */
+    private transient volatile int sizeCtl;
+    
+    /**
+     * Maps the specified key to the specified value in this table.
+     * Neither the key nor the value can be null.
+     *
+     * <p>The value can be retrieved by calling the {@code get} method
+     * with a key that is equal to the original key.
+     *
+     * @param key key with which the specified value is to be associated
+     * @param value value to be associated with the specified key
+     * @return the previous value associated with {@code key}, or
+     *         {@code null} if there was no mapping for {@code key}
+     * @throws NullPointerException if the specified key or value is null
+     */
+    public V put(K key, V value) {
+        return putVal(key, value, false);
+    }
+
+    /** Implementation for put and putIfAbsent */
+    final V putVal(K key, V value, boolean onlyIfAbsent) {
+        if (key == null || value == null) throw new NullPointerException();
+        int hash = spread(key.hashCode());
+        int binCount = 0;
+        for (Node<K,V>[] tab = table;;) {
+            Node<K,V> f; int n, i, fh;
+            if (tab == null || (n = tab.length) == 0)
+                tab = initTable();
+            else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
+                if (casTabAt(tab, i, null,
+                        new Node<K,V>(hash, key, value, null)))
+                    break;                   // no lock when adding to empty bin
+            }
+            else if ((fh = f.hash) == MOVED)
+                tab = helpTransfer(tab, f);
+            else {
+                V oldVal = null;
+                synchronized (f) {
+                    if (tabAt(tab, i) == f) {
+                        if (fh >= 0) {
+                            binCount = 1;
+                            for (Node<K,V> e = f;; ++binCount) {
+                                K ek;
+                                if (e.hash == hash &&
+                                        ((ek = e.key) == key ||
+                                                (ek != null && key.equals(ek)))) {
+                                    oldVal = e.val;
+                                    if (!onlyIfAbsent)
+                                        e.val = value;
+                                    break;
+                                }
+                                Node<K,V> pred = e;
+                                if ((e = e.next) == null) {
+                                    pred.next = new Node<K,V>(hash, key,
+                                            value, null);
+                                    break;
+                                }
+                            }
+                        }
+                        else if (f instanceof TreeBin) {
+                            Node<K,V> p;
+                            binCount = 2;
+                            if ((p = ((TreeBin<K,V>)f).putTreeVal(hash, key,
+                                    value)) != null) {
+                                oldVal = p.val;
+                                if (!onlyIfAbsent)
+                                    p.val = value;
+                            }
+                        }
+                    }
+                }
+                if (binCount != 0) {
+                    if (binCount >= TREEIFY_THRESHOLD)
+                        treeifyBin(tab, i);
+                    if (oldVal != null)
+                        return oldVal;
+                    break;
+                }
+            }
+        }
+        addCount(1L, binCount);
+        return null;
+    }
+
+    /**
+     * Initializes table, using the size recorded in sizeCtl.
+     */
+    private final Node<K,V>[] initTable() {
+        Node<K,V>[] tab; int sc;
+        while ((tab = table) == null || tab.length == 0) {
+            if ((sc = sizeCtl) < 0)
+                Thread.yield(); // lost initialization race; just spin
+            else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
+                try {
+                    if ((tab = table) == null || tab.length == 0) {
+                        int n = (sc > 0) ? sc : DEFAULT_CAPACITY;
+                        @SuppressWarnings("unchecked")
+                        Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n];
+                        table = tab = nt;
+                        sc = n - (n >>> 2);
+                    }
+                } finally {
+                    sizeCtl = sc;
+                }
+                break;
+            }
+        }
+        return tab;
+    }
+}
 ```

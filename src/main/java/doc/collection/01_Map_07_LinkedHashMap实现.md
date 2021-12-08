@@ -1,3 +1,6 @@
+#LinkedHashMap源码分析
+
+##一： 类注释及内部变量预览
 ```java
 /**
  * <p>Hash table and linked list implementation of the <tt>Map</tt> interface,
@@ -213,8 +216,21 @@ public class LinkedHashMap<K,V>
 
 }
 ```
+总结：
+1. LinkedHashMap是HashMap的子类，具有迭代顺序。
+2. HashMap中正常保存着节点信息（数组+链表或树）， LinkedHashMap中还维护了一个双向链表来维持顺序，有两种顺序：
+    - 2.1：插入顺序 完全按照插入的顺序
+    - 2.2：访问顺序 节点查询、更新后会将其移动到双向链表的尾部，表示最近访问过
+4. 通过以下三个回调方法来调整双向链表
+    - 3.1：afterNodeInsertion HashMap的putval等方法在插入新节点后会调用，LinkedHashMap将新节点插入到自己的双向链表中。
+    - 3.2：afterNodeAccess get(本类重写的）、HashMap.putval(key已存在）、HashMap.replace等方法会回调，LinkedHashMap将节点移动到双向链表尾部
+    - 3.2：afterNodeRemoval HashMap.remove执行后会调用，LinkedHashMap也将该节点从自己的双向链表中删除。
+5. 因为这些回调方法的操作，导致LinkedHashMap性能要低于HashMap，但是提供了顺序。
+6. 基于访问顺序的原则，LinkedHashMap适合用来构建LUR（Least Recently Used 最近最少使用）缓存。
+7. 非同步的。
+8. 此类维护的Node节点数据结构是一个双向链表结构，有before和after属性。
 
-##put操作逻辑  
+##二： put操作逻辑  
 该类的put操作使用的是HashMap中的，未重写put，只是重写了newNode方法。   
 ```java
 public class LinkedHashMap<K,V>
@@ -236,17 +252,17 @@ public class LinkedHashMap<K,V>
         LinkedHashMap.Entry<K,V> last = tail;
         tail = p;
         if (last == null)
-            //如果尾部未null，表示一个node还没有，则将该node p也赋值给head
+            //如果尾部为null，表示一个node还没有，则将新节点p也赋值给head
             head = p;
         else {
             //双向链表从尾部加入的逻辑
-            // 新尾部节点p的before设置未老尾部节点last，老尾部节点last的after设置未新尾部节点p
+            //新尾部节点p的before设置为老尾部节点last，老尾部节点last的after设置未新尾部节点p
             p.before = last;
             last.after = p;
         }
     }
 
-    //该方法在HashMap的putVal、computeIfAbsent、compute、merge方法尾部调用，表示一个新节点加入了
+    //该方法在HashMap的putVal等方法尾部调用，新节点加入后调用
     void afterNodeInsertion(boolean evict) { 
         // possibly remove eldest 可能移除最年长的
         // HashMap调用此方法是evict（驱逐）参数都是true
@@ -271,7 +287,7 @@ public class LinkedHashMap<K,V>
      * 如果该map需要移除最旧的条目则返回true。
      * 在map中插入新条目后，该方法将被put和putAll方法调用。
      * 它为实现者提供了在每次添加新条目时删除最旧条目的机会。
-     * 该map表示一个cache是这将很有用：它允许map通过删除过时的条目来减少内存消耗。
+     * 该map表示一个cache时这将很有用：它允许map通过删除过时的条目来减少内存消耗。
      *
      * <p>Sample use: this override will allow the map to grow up to 100
      * entries and then delete the eldest entry each time a new entry is
@@ -317,3 +333,97 @@ public class LinkedHashMap<K,V>
     }
 }
 ```
+总结：
+1. 重写了HashMap的newNode方法，用于生成双向链表的节点。
+2. afterNodeInsertion内，通过是否驱逐最旧的节点判断，来移除最旧的节点（head），
+   此类中默认是不移除的，子类可以根据需求来实现。
+
+##二： get、remove操作逻辑
+```java
+public class LinkedHashMap<K,V>
+        extends HashMap<K,V>
+        implements Map<K,V>
+{
+    /**
+     * Returns the value to which the specified key is mapped,
+     * or {@code null} if this map contains no mapping for the key.
+     *
+     * <p>More formally, if this map contains a mapping from a key
+     * {@code k} to a value {@code v} such that {@code (key==null ? k==null :
+     * key.equals(k))}, then this method returns {@code v}; otherwise
+     * it returns {@code null}.  (There can be at most one such mapping.)
+     *
+     * <p>A return value of {@code null} does not <i>necessarily</i>
+     * indicate that the map contains no mapping for the key; it's also
+     * possible that the map explicitly maps the key to {@code null}.
+     * The {@link #containsKey containsKey} operation may be used to
+     * distinguish these two cases.
+     */
+    public V get(Object key) {
+        Node<K,V> e;
+        //getNode使用的是父类HashMap的方法
+        if ((e = getNode(hash(key), key)) == null)
+            return null;
+        if (accessOrder)
+            //如果是访问顺序，则更新节点位置
+            afterNodeAccess(e);
+        return e.value;
+    }
+    
+    //该方法在HashMap的replace、putVal键存在的时候也会被调用，表示node被访问
+    void afterNodeAccess(Node<K,V> e) { // move node to last
+        LinkedHashMap.Entry<K,V> last;//last用于表示移除p后，双向链表中最后一个节点
+        if (accessOrder && (last = tail) != e) {
+            //如果accessOrder为true，表示访问顺序，则会在节点更新后，将该节点更新到tail尾部
+            LinkedHashMap.Entry<K,V> p =
+                    (LinkedHashMap.Entry<K,V>)e, b = p.before, a = p.after;
+            //p要置位tail，所以p.after要置空
+            p.after = null;
+            
+            //这一步是将p从双向链表中删除
+            if (b == null)
+                //p的前置节点b为空，表示p为head，则将a置位新的head
+                head = a;
+            else
+                //p的前置节点b不为空，则将p的前置节点b.after和p的后置节点a关联
+                b.after = a;
+            
+            if (a != null)
+                //p的后置节点a不为空，则将p的后置节点a.before和p的前置节点b关联
+                a.before = b;
+            else
+                //p的后置节点a为空，表示p为tail，则最后一个节点就是p的前置节点b
+                last = b;
+            
+            //将p重新添加到双向链表的尾部
+            if (last == null)
+                //last为空表示链表中只有一个节点p
+                head = p;
+            else {
+                p.before = last;
+                last.after = p;
+            }
+            tail = p;
+            ++modCount;
+        }
+    }
+
+    //该方法在HashMap的removeNode方法后调用，用于从该类中的双向量表中删除Node
+    void afterNodeRemoval(Node<K,V> e) { // unlink
+        LinkedHashMap.Entry<K,V> p =
+                (LinkedHashMap.Entry<K,V>)e, b = p.before, a = p.after;
+        p.before = p.after = null;
+        if (b == null)
+            head = a;
+        else
+            b.after = a;
+        if (a == null)
+            tail = b;
+        else
+            a.before = b;
+    }
+}
+```
+总结：
+1. 覆盖HashMap.get方法，方便在get之后调用afterNodeAccess，来更新节点新旧情况。
+2. afterNodeRemoval 用与删除双向链表中的节点。

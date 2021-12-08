@@ -385,6 +385,41 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         }
     }
 
+    /**
+     * Computes key.hashCode() and spreads (XORs) higher bits of hash
+     * to lower.  Because the table uses power-of-two masking, sets of
+     * hashes that vary only in bits above the current mask will
+     * always collide. (Among known examples are sets of Float keys
+     * holding consecutive whole numbers in small tables.)  So we
+     * apply a transform that spreads the impact of higher bits
+     * downward. There is a tradeoff between speed, utility, and
+     * quality of bit-spreading. Because many common sets of hashes
+     * are already reasonably distributed (so don't benefit from
+     * spreading), and because we use trees to handle large sets of
+     * collisions in bins, we just XOR some shifted bits in the
+     * cheapest possible way to reduce systematic lossage, as well as
+     * to incorporate impact of the highest bits that would otherwise
+     * never be used in index calculations because of table bounds.
+     * 计算key.hashCode()并将hash值的高位（异或）扩展到低位。
+     * 由于该表使用两个掩码的幂，因此仅在当前掩码上方的位上变化的哈希集将始终冲突。
+     * （已知示例中有一组Float键，它们在小表格中保持连续整数。）
+     * 因此，我们应用了一种变换，将高位的影响向下传播。
+     * 在比特传播的速度、效用和质量之间存在一种折衷。
+     * 因为许多常见的散列集已经合理地分布了（所以不要从散列中获益），
+     * 因为我们使用树来处理容器中的大量碰撞，
+     * 我们只是以尽可能便宜的方式对一些移位的位进行异或运算，以减少系统损失，
+     * 并结合最高位的影响，否则，由于表边界，最高位将永远不会用于索引计算。
+     */
+    static final int hash(Object key) {
+        int h;
+        return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+    }
+
+    // Callbacks to allow LinkedHashMap post-actions
+    //允许LinkedHashMap后置处理的回调方法（这里知道有这三个回调方法就好，LinkedHashMap中再细看）
+    void afterNodeAccess(Node<K,V> p) { }
+    void afterNodeInsertion(boolean evict) { }
+    void afterNodeRemoval(Node<K,V> p) { }
 }
 ```
 总结：  
@@ -392,6 +427,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 2. HashMap不是线程安全的，但是效率就高了。
 3. HashMap允许key和value为空。
 4. HashMap每个数组内部的容器，其数据结构不一定时列表了，有可能会转换成树。
+5. 提供了三个钩子方法，以供LinkedHashMap使用
 
 ##二： put、resize逻辑  
 ```java
@@ -500,7 +536,8 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                 V oldValue = e.value;
                 if (!onlyIfAbsent || oldValue == null)
                     e.value = value;
-                afterNodeAccess(e);//调用钩子方法
+                //调用钩子方法，这里调用的是Access表示访问，而不是afterNodeInsertion表示插入哦（LinkedHashMap中会使用）
+                afterNodeAccess(e);
                 return oldValue;
             }
         }
@@ -509,7 +546,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         ++modCount;
         if (++size > threshold) //如果当前键值对数量大于阈值，进行扩容。
             resize();
-        afterNodeInsertion(evict);//调用钩子方法
+        afterNodeInsertion(evict);//调用钩子方法，通知新节点插入（LinkedHashMap中会使用）
         return null;
     }
 
@@ -776,7 +813,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                     p.next = node.next;
                 ++modCount;//修改次数增加
                 --size;//条目数量减少
-                afterNodeRemoval(node);//调用钩子方法
+                afterNodeRemoval(node);//调用钩子方法，通知节点删除了（LinkedHashMap中会使用）
                 return node;
             }
         }

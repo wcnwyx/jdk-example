@@ -346,7 +346,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * rehash).  This field is used to make iterators on Collection-views of
      * the HashMap fail-fast.  (See ConcurrentModificationException).
      * 此HashMap在结构上被修改的次数，结构修改是指更改HashMap中映射的数量或以其他方式修改其内部结构（例如，重新设置）。
-     * 此字段用于使哈希表集合视图上的迭代器快速失效。
+     * 此字段用于使哈希表集合视图上的迭代器快速失效。(后面再看快速失败的逻辑)
      */
     transient int modCount;
 
@@ -385,36 +385,6 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         }
     }
 
-    /**
-     * Computes key.hashCode() and spreads (XORs) higher bits of hash
-     * to lower.  Because the table uses power-of-two masking, sets of
-     * hashes that vary only in bits above the current mask will
-     * always collide. (Among known examples are sets of Float keys
-     * holding consecutive whole numbers in small tables.)  So we
-     * apply a transform that spreads the impact of higher bits
-     * downward. There is a tradeoff between speed, utility, and
-     * quality of bit-spreading. Because many common sets of hashes
-     * are already reasonably distributed (so don't benefit from
-     * spreading), and because we use trees to handle large sets of
-     * collisions in bins, we just XOR some shifted bits in the
-     * cheapest possible way to reduce systematic lossage, as well as
-     * to incorporate impact of the highest bits that would otherwise
-     * never be used in index calculations because of table bounds.
-     * 计算key.hashCode()并将hash值的高位（异或）扩展到低位。
-     * 由于该表使用两个掩码的幂，因此仅在当前掩码上方的位上变化的哈希集将始终冲突。
-     * （已知示例中有一组Float键，它们在小表格中保持连续整数。）
-     * 因此，我们应用了一种变换，将高位的影响向下传播。
-     * 在比特传播的速度、效用和质量之间存在一种折衷。
-     * 因为许多常见的散列集已经合理地分布了（所以不要从散列中获益），
-     * 因为我们使用树来处理容器中的大量碰撞，
-     * 我们只是以尽可能便宜的方式对一些移位的位进行异或运算，以减少系统损失，
-     * 并结合最高位的影响，否则，由于表边界，最高位将永远不会用于索引计算。
-     */
-    static final int hash(Object key) {
-        int h;
-        return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
-    }
-
     // Callbacks to allow LinkedHashMap post-actions
     //允许LinkedHashMap后置处理的回调方法（这里知道有这三个回调方法就好，LinkedHashMap中再细看）
     void afterNodeAccess(Node<K,V> p) { }
@@ -428,6 +398,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 3. HashMap允许key和value为空。
 4. HashMap每个数组内部的容器，其数据结构不一定时列表了，有可能会转换成树。
 5. 提供了三个钩子方法，以供LinkedHashMap使用
+6. HashMap的hash算法进行了改进，将高位和低位进行了异或，防止只是高位变化的情况下造成数组索引大量碰撞。
 
 ##二： put、resize逻辑  
 ```java
@@ -824,3 +795,205 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 总结：
 1. 这里不考虑树结构的操作（TreeMap再细看）。
 2. get和remove都是先根据key定位到数组的索引位置，然后再操作链表或树进行查询或删除
+
+
+##四： 哈希算法的改进
+```
+    /**
+     * Computes key.hashCode() and spreads (XORs) higher bits of hash
+     * to lower.  Because the table uses power-of-two masking, sets of
+     * hashes that vary only in bits above the current mask will
+     * always collide. (Among known examples are sets of Float keys
+     * holding consecutive whole numbers in small tables.)  So we
+     * apply a transform that spreads the impact of higher bits
+     * downward. There is a tradeoff between speed, utility, and
+     * quality of bit-spreading. Because many common sets of hashes
+     * are already reasonably distributed (so don't benefit from
+     * spreading), and because we use trees to handle large sets of
+     * collisions in bins, we just XOR some shifted bits in the
+     * cheapest possible way to reduce systematic lossage, as well as
+     * to incorporate impact of the highest bits that would otherwise
+     * never be used in index calculations because of table bounds.
+     * 计算key.hashCode()并将hash值的高位（异或）扩展到低位。
+     * 由于该表使用2的幂作为掩码，因此仅在当前掩码上方的位上变化的哈希集将始终冲突。
+     * （已知示例中有一组Float键，它们在小表格中保持连续整数。）
+     * 因此，我们应用了一种变换，将高位的影响向下传播。
+     * 在比特传播的速度、效用和质量之间存在一种折衷。
+     * 因为许多常见的散列集已经合理地分布了（所以不要从散列中获益），
+     * 因为我们使用树来处理容器中的大量碰撞，
+     * 我们只是以尽可能便宜的方式对一些移位的位进行异或运算，以减少系统损失，
+     * 并结合最高位的影响，否则，由于表边界，最高位将永远不会用于索引计算。
+     * 
+     */
+    static final int hash(Object key) {
+        int h;
+        return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+    }
+```
+HashMap中数组的容量都是2的幂，比如说容量初始值1<<4，如果说一组key的hash值都是 (x<<16 | 1<<4),
+只有x在变化，也就是只有高位在变化，低位永远不变，导致key的哈希值和容量取模的结果永远是0，
+最终导致数组的索引一直是0，大量的放到了0号素组位置。所以采用了高位和低位异或一下。
+注释里也说到了浮点数很容易产生。写了个测试用力试了下：
+
+```
+        int tableSize = 16;//数组容量
+        //key为float，取值90-99
+        for(Float key = 90f;key<100f;key++){
+            //HashTable的算法
+            int hashTableIndex = (key.hashCode() & 0x7FFFFFFF) % tableSize;
+            int h;
+            //HashMap的算法
+            int hashMapIndex = ((h = key.hashCode()) ^ (h >>> 16))& (tableSize-1);
+            System.out.println("key:"+key+" hash:"+key.hashCode()+" hashTableIndex:"+hashTableIndex+" hashMapIndex:"+hashMapIndex);
+        }
+```
+运行结果如下(效果还是很明显的)：
+```
+key:90.0 hash:1119092736 hashTableIndex:0 hashMapIndex:4
+key:91.0 hash:1119223808 hashTableIndex:0 hashMapIndex:6
+key:92.0 hash:1119354880 hashTableIndex:0 hashMapIndex:8
+key:93.0 hash:1119485952 hashTableIndex:0 hashMapIndex:10
+key:94.0 hash:1119617024 hashTableIndex:0 hashMapIndex:12
+key:95.0 hash:1119748096 hashTableIndex:0 hashMapIndex:14
+key:96.0 hash:1119879168 hashTableIndex:0 hashMapIndex:0
+key:97.0 hash:1120010240 hashTableIndex:0 hashMapIndex:2
+key:98.0 hash:1120141312 hashTableIndex:0 hashMapIndex:4
+key:99.0 hash:1120272384 hashTableIndex:0 hashMapIndex:6
+```
+
+##五： 迭代器怎么快速失败  
+以keySet方法来看   
+```java
+public class HashMap<K,V> extends AbstractMap<K,V>
+    implements Map<K,V>, Cloneable, Serializable {
+
+    /**
+     * 这个字段第一部分已经看到注释写的很清楚，用于记录结构修改的次数，用于做快速失败。
+     * 在put、remove、clear这些方法中，都会将此变量加1处理。
+     * 快速失败的逻辑就是在迭代的开始时备份一个modeCount的值，然后再没迭代时判断下还是否相等，
+     * 也就意味着HashMap是否被修改了，如果不等，则抛出异常。
+     */
+    transient int modCount;
+    
+    public Set<K> keySet() {
+        Set<K> ks = keySet;
+        if (ks == null) {
+            //返回的时内部类KeySet
+            ks = new KeySet();
+            keySet = ks;
+        }
+        return ks;
+    }
+
+    final class KeySet extends AbstractSet<K> {
+        public final int size()                 { return size; }
+        public final void clear()               { HashMap.this.clear(); }
+        
+        //这里返回的是内部类KeyIterator
+        public final Iterator<K> iterator()     { return new KeyIterator(); }
+        public final boolean contains(Object o) { return containsKey(o); }
+        public final boolean remove(Object key) {
+            return removeNode(hash(key), key, null, false, true) != null;
+        }
+        public final Spliterator<K> spliterator() {
+            return new KeySpliterator<>(HashMap.this, 0, -1, 0, 0);
+        }
+        public final void forEach(Consumer<? super K> action) {
+            Node<K,V>[] tab;
+            if (action == null)
+                throw new NullPointerException();
+            if (size > 0 && (tab = table) != null) {
+                //开始循环前记录下modeCount
+                int mc = modCount;
+                for (int i = 0; i < tab.length; ++i) {
+                    for (Node<K,V> e = tab[i]; e != null; e = e.next)
+                        action.accept(e.key);
+                }
+                if (modCount != mc)
+                    //结束时发现modeCount发生变化了，则抛出异常
+                    throw new ConcurrentModificationException();
+            }
+        }
+    }
+
+
+    //再看下KeyIterator的逻辑：
+    /**
+     * HashIterator为抽象类，实现了nextNode逻辑，其子类有
+     * KeyIterator: keySet()方法中返回的集合对象的迭代器
+     * ValueIterator: values()方法中返回的集合对象的迭代器
+     * EntryIterator: entrySet()方法中返回的集合对象的迭代器
+     * */
+    abstract class HashIterator {
+        Node<K,V> next;        // next entry to return
+        Node<K,V> current;     // current entry
+        int expectedModCount;  // for fast-fail 记录一个modeCount副本
+        int index;             // current slot
+
+        HashIterator() {
+            //在生成该类时就记录下了当时的modCount
+            expectedModCount = modCount;
+            Node<K,V>[] t = table;
+            current = next = null;
+            index = 0;
+            if (t != null && size > 0) { // advance to first entry
+                do {} while (index < t.length && (next = t[index++]) == null);
+            }
+        }
+
+        public final boolean hasNext() {
+            return next != null;
+        }
+
+        final Node<K,V> nextNode() {
+            Node<K,V>[] t;
+            Node<K,V> e = next;
+            if (modCount != expectedModCount)
+                //每次获取nextNode时都会判断modCount是否发生了变化
+                throw new ConcurrentModificationException();
+            if (e == null)
+                throw new NoSuchElementException();
+            if ((next = (current = e).next) == null && (t = table) != null) {
+                do {} while (index < t.length && (next = t[index++]) == null);
+            }
+            return e;
+        }
+
+        public final void remove() {
+            Node<K,V> p = current;
+            if (p == null)
+                throw new IllegalStateException();
+            if (modCount != expectedModCount)
+                throw new ConcurrentModificationException();
+            current = null;
+            K key = p.key;
+            removeNode(hash(key), key, null, false, false);
+            //HashMap的类注释中有明确写着，迭代器自身的remove方法是支持的，不报错的，
+            //因为在此处removeNode过后，将expectedModCount重新赋值了。
+            expectedModCount = modCount;
+        }
+    }
+
+    //keySet()方法中返回的集合对象的迭代器
+    final class KeyIterator extends HashIterator
+            implements Iterator<K> {
+        public final K next() { return nextNode().key; }
+    }
+
+    //values()方法中返回的集合对象的迭代器
+    final class ValueIterator extends HashIterator
+            implements Iterator<V> {
+        public final V next() { return nextNode().value; }
+    }
+
+    //entrySet()方法中返回的集合对象的迭代器
+    final class EntryIterator extends HashIterator
+            implements Iterator<Map.Entry<K,V>> {
+        public final Map.Entry<K,V> next() { return nextNode(); }
+    }
+}
+```
+总结：  
+1. 此类的所有“集合视图方法”返回的迭代器都是快速失败的。
+2. 实现方法就是在创建Iterator时就将modCount记录到内部变量expectedModCount，然后每次next的时候再对比一下。
+3. Iterator自身的remove方法支持，因为其再removeNode后又重新更新记录了下expectedModCount。

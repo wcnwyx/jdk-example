@@ -251,6 +251,7 @@ public class Hashtable<K,V>
         Entry<?,?> tab[] = table;
         int hash = key.hashCode();
         //根据hash值取模数组长度，确认所在数组的位置索引
+        // hash & 0x7FFFFFFF 防止hash值为负数导致index为负数报错
         int index = (hash & 0x7FFFFFFF) % tab.length;
         @SuppressWarnings("unchecked")
         Entry<K,V> entry = (Entry<K,V>)tab[index];

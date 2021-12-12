@@ -827,6 +827,9 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     static final int hash(Object key) {
         int h;
+        // 这里为什么不像Hashtable中再和0x7FFFFFFF与一下呢？不怕负数吗？
+        // HashMap获取数组index不是用的取模，用的是与运算(table.length - 1) & hash，
+        // (table.length - 1)不可能为负数（最高位符号位不可能是1），按位与后结果也不会为负数
         return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
     }
 ```

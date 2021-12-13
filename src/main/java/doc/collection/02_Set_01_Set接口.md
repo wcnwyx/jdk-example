@@ -340,7 +340,7 @@ public interface Set<E> extends Collection<E> {
      * <i>intersection</i> of the two sets.
 	 * 仅保留此集中包含在指定集合中的元素（可选操作）。
 	 * 换句话说，从该set中删除指定collection中不包含的所有元素。
-	 * 如果指定的collection也是一个set，则此操作会有效地修改该set，使其值为两个集合的交点。
+	 * 如果指定的collection也是一个set，则此操作会有效地修改该set，使其值为两个集合的交集。
      *
      * @param  c collection containing elements to be retained in this set
      * @return <tt>true</tt> if this set changed as a result of the call
@@ -363,6 +363,8 @@ public interface Set<E> extends Collection<E> {
      * collection is also a set, this operation effectively modifies this
      * set so that its value is the <i>asymmetric set difference</i> of
      * the two sets.
+     * 从此集合中删除指定集合中包含的所有元素（可选操作）。
+     * 如果指定的集合也是一个set，则此操作会有效地修改此集合，使其值为两个集合的不对称集合差。
      *
      * @param  c collection containing elements to be removed from this set
      * @return <tt>true</tt> if this set changed as a result of the call
@@ -383,6 +385,7 @@ public interface Set<E> extends Collection<E> {
     /**
      * Removes all of the elements from this set (optional operation).
      * The set will be empty after this call returns.
+     * 从该集中删除所有元素（可选操作）。此调用返回后，集合将为空。
      *
      * @throws UnsupportedOperationException if the <tt>clear</tt> method
      *         is not supported by this set
@@ -391,6 +394,7 @@ public interface Set<E> extends Collection<E> {
 
 
     // Comparison and hashing
+    //比较和散列
 
     /**
      * Compares the specified object with this set for equality.  Returns
@@ -400,6 +404,9 @@ public interface Set<E> extends Collection<E> {
      * contained in the specified set).  This definition ensures that the
      * equals method works properly across different implementations of the
      * set interface.
+     * 将指定对象与此集合进行相等性比较。如果指定的对象也是一个集合，两个集合的大小相同，
+     * 并且指定集合的每个成员都包含在此集合中（或者等效地，此集合的每个成员都包含在此指定集合中），则返回true。
+     * 此定义确保equals方法在set接口的不同实现中正常工作。
      *
      * @param o object to be compared for equality with this set
      * @return <tt>true</tt> if the specified object is equal to this set
@@ -414,6 +421,8 @@ public interface Set<E> extends Collection<E> {
      * <tt>s1.hashCode()==s2.hashCode()</tt> for any two sets <tt>s1</tt>
      * and <tt>s2</tt>, as required by the general contract of
      * {@link Object#hashCode}.
+     * 返回此集合的哈希值。set的哈希值定义为set中元素的哈希值之和，其中空元素的哈希值定义为零。
+     * 这确保了s1.equals(s2)意味着s1.hashCode()==s2.hashCode()，用于任意两组s1和s2，如Object#hashCode的总合同所要求。
      *
      * @return the hash code value for this set
      * @see Object#equals(Object)
@@ -423,10 +432,12 @@ public interface Set<E> extends Collection<E> {
 
     /**
      * Creates a {@code Spliterator} over the elements in this set.
+     * 在此集合中的元素上创建拆分器Spliterator。
      *
      * <p>The {@code Spliterator} reports {@link Spliterator#DISTINCT}.
      * Implementations should document the reporting of additional
      * characteristic values.
+     * 拆分器报告Spliterator#DISTINCT。不同的实现应记录额外特征值的报告。
      *
      * @implSpec
      * The default implementation creates a

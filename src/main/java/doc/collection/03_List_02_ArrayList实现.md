@@ -100,6 +100,137 @@
 public class ArrayList<E> extends AbstractList<E>
         implements List<E>, RandomAccess, Cloneable, java.io.Serializable
 {
+
+    /**
+     * Default initial capacity.
+     * 默认初始容量。
+     */
+    private static final int DEFAULT_CAPACITY = 10;
+
+    /**
+     * Shared empty array instance used for empty instances.
+     * 用于空实例的共享空数组实例。
+     */
+    private static final Object[] EMPTY_ELEMENTDATA = {};
+
+    /**
+     * Shared empty array instance used for default sized empty instances. We
+     * distinguish this from EMPTY_ELEMENTDATA to know how much to inflate when
+     * first element is added.
+     * 用于默认大小的空实例的共享空数组实例。
+     * 我们将其与EMPTY_ELEMENTDATA 区分开来，以了解添加第一个元素时要膨胀多少。
+     */
+    private static final Object[] DEFAULTCAPACITY_EMPTY_ELEMENTDATA = {};
+
+    /**
+     * The array buffer into which the elements of the ArrayList are stored.
+     * The capacity of the ArrayList is the length of this array buffer. Any
+     * empty ArrayList with elementData == DEFAULTCAPACITY_EMPTY_ELEMENTDATA
+     * will be expanded to DEFAULT_CAPACITY when the first element is added.
+     * 存储ArrayList元素的数组缓冲区。ArrayList的容量是此数组缓冲区的长度。
+     * 添加第一个元素时，任何空ArrayList(elementData==DEFAULTCAPACITY_EMPTY_ELEMENTDATA)都将扩展为DEFAULT_CAPACITY。
+     */
+    transient Object[] elementData; // non-private to simplify nested class access 非私有以简化内部嵌套类访问
+
+    /**
+     * The size of the ArrayList (the number of elements it contains).
+     * ArrayList的大小（它包含的元素数）。
+     * @serial
+     */
+    private int size;
+
+    /**
+     * The maximum size of array to allocate.
+     * Some VMs reserve some header words in an array.
+     * Attempts to allocate larger arrays may result in
+     * OutOfMemoryError: Requested array size exceeds VM limit
+     * 可以分配的最大数组大小。
+     * 有些虚拟机在数组中保留一些头。
+     * 尝试分配较大的数组可能会导致OutOfMemoryError：请求的数组大小超过VM限制
+     */
+    private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+
+    /**
+     * The number of times this list has been <i>structurally modified</i>.
+     * Structural modifications are those that change the size of the
+     * list, or otherwise perturb it in such a fashion that iterations in
+     * progress may yield incorrect results.
+     * 此列表在结构上被修改的次数。结构修改是指那些改变列表大小的修改，或者以某种方式干扰列表，
+     * 使得正在进行的迭代可能产生不正确的结果。
+     *
+     * <p>This field is used by the iterator and list iterator implementation
+     * returned by the {@code iterator} and {@code listIterator} methods.
+     * If the value of this field changes unexpectedly, the iterator (or list
+     * iterator) will throw a {@code ConcurrentModificationException} in
+     * response to the {@code next}, {@code remove}, {@code previous},
+     * {@code set} or {@code add} operations.  This provides
+     * <i>fail-fast</i> behavior, rather than non-deterministic behavior in
+     * the face of concurrent modification during iteration.
+     * 该字段由iterator和listIterator方法返回的迭代器和列表迭代器实现使用。
+     * 如果此字段的值意外更改，iterator（或list iterator）将抛出ConcurrentModificationException，
+     * 以响应next、remove、previous、set或add操作。
+     * 这提供了快速失效行为，而不是在迭代过程中面对并发修改时的非确定性行为。
+     *
+     * <p><b>Use of this field by subclasses is optional.</b> If a subclass
+     * wishes to provide fail-fast iterators (and list iterators), then it
+     * merely has to increment this field in its {@code add(int, E)} and
+     * {@code remove(int)} methods (and any other methods that it overrides
+     * that result in structural modifications to the list).  A single call to
+     * {@code add(int, E)} or {@code remove(int)} must add no more than
+     * one to this field, or the iterators (and list iterators) will throw
+     * bogus {@code ConcurrentModificationExceptions}.  If an implementation
+     * does not wish to provide fail-fast iterators, this field may be
+     * ignored.
+     * 子类使用此字段是可选的。如果子类希望提供快速失效的iterators（和list iterators），
+     * 那么它只需在其add(int, E)和remove(int)方法
+     * （以及它重写的任何其他方法，这些方法会导致对列表的结构修改）中让该字段增加。
+     * 对add(int, E)或 remove(int)的单次调用只能让该字段加1，
+     * 否则iterators（和list iterators）将抛出假的ConcurrentModificationExceptions。
+     */
+    protected transient int modCount = 0;
+}
+```
+
+##add逻辑
+```java
+public class ArrayList<E> extends AbstractList<E>
+        implements List<E>, RandomAccess, Cloneable, java.io.Serializable
+{
+    transient Object[] elementData;
     
+    /**
+     * Appends the specified element to the end of this list.
+     * 将指定元素添加到list的末尾。
+     *
+     * @param e element to be appended to this list
+     * @return <tt>true</tt> (as specified by {@link Collection#add})
+     */
+    public boolean add(E e) {
+        //elementData素组容量增加、modCount增加
+        ensureCapacityInternal(size + 1);  // Increments modCount!!
+        elementData[size++] = e;
+        return true;
+    }
+
+
+    /**
+     * Increases the capacity to ensure that it can hold at least the
+     * number of elements specified by the minimum capacity argument.
+     * 增加容量，以确保它至少可以容纳最小容量参数指定的元素数。
+     *
+     * @param minCapacity the desired minimum capacity
+     */
+    private void grow(int minCapacity) {
+        // overflow-conscious code
+        int oldCapacity = elementData.length;
+        //这里主要是看下新的容量是老的容量的1.5倍
+        int newCapacity = oldCapacity + (oldCapacity >> 1);
+        if (newCapacity - minCapacity < 0)
+            newCapacity = minCapacity;
+        if (newCapacity - MAX_ARRAY_SIZE > 0)
+            newCapacity = hugeCapacity(minCapacity);
+        // minCapacity is usually close to size, so this is a win:
+        elementData = Arrays.copyOf(elementData, newCapacity);
+    }
 }
 ```

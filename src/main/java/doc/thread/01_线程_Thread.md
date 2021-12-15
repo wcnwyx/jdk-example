@@ -113,7 +113,7 @@ public static native void sleep(long millis) throws InterruptedException;
 ## join方法
 1. b线程内部调用a.join()，说明b要等待a线程终止后再继续执行。
 2. a线程终止后，虚拟机底层会调用a.notifyAll方法将b唤醒。
-3. 可以被中断，可以被中断。当被中断并抛出异常时，线程的interrupted状态会被清除。
+3. 可以被中断。当被中断并抛出异常时，线程的interrupted状态会被清除。
 ```
 /**
  * Waits at most {@code millis} milliseconds for this thread to

@@ -1,3 +1,6 @@
+#ArrayList源码分析
+
+##一： 类注释及内部变量预览
 ```java
 /**
  * Resizable-array implementation of the <tt>List</tt> interface.  Implements
@@ -190,12 +193,18 @@ public class ArrayList<E> extends AbstractList<E>
     protected transient int modCount = 0;
 }
 ```
+总结：
+1. 内部维护了一个数组来存储元素，数组大小可以自动调整，所以内部都是数组操作。
+2. 允许存入null。
+3. 非同步的。synchronized修饰方法。
+4. 迭代器是快速失败的，采用的和map一样的modCount计数策略。
 
-##add逻辑
+##二： add、set逻辑
 ```java
 public class ArrayList<E> extends AbstractList<E>
         implements List<E>, RandomAccess, Cloneable, java.io.Serializable
 {
+    private static final int DEFAULT_CAPACITY = 10;
     transient Object[] elementData;
     
     /**
@@ -212,6 +221,31 @@ public class ArrayList<E> extends AbstractList<E>
         return true;
     }
 
+    private void ensureCapacityInternal(int minCapacity) {
+        ensureExplicitCapacity(calculateCapacity(elementData, minCapacity));
+    }
+
+    private static int calculateCapacity(Object[] elementData, int minCapacity) {
+        if (elementData == DEFAULTCAPACITY_EMPTY_ELEMENTDATA) {
+            //首次扩容，设置为DEFAULT_CAPACITY（10）
+            return Math.max(DEFAULT_CAPACITY, minCapacity);
+        }
+        return minCapacity;
+    }
+
+    private void ensureExplicitCapacity(int minCapacity) {
+        modCount++;
+
+        // overflow-conscious code
+        //minCapacity为实际元素个数size再加1，elementData这个数组的大小不一定和size一样
+        //这里不一定会触发grow的。
+        //第一次add前 size=0 elementDate.length=0 add后 size=1 elementDate.length=10
+        //第二次add前 size=1 elementDate.length=10 不扩容
+        //......
+        //第11次add前 size=10 elementDate.length=10 add后 size=11 elementDate.length=15
+        if (minCapacity - elementData.length > 0)
+            grow(minCapacity);
+    }
 
     /**
      * Increases the capacity to ensure that it can hold at least the
@@ -232,5 +266,138 @@ public class ArrayList<E> extends AbstractList<E>
         // minCapacity is usually close to size, so this is a win:
         elementData = Arrays.copyOf(elementData, newCapacity);
     }
+
+    /**
+     * Inserts the specified element at the specified position in this
+     * list. Shifts the element currently at that position (if any) and
+     * any subsequent elements to the right (adds one to their indices).
+     * 将指定的元素插入到该list的指定位置。
+     * 将当前位于该位置的元素（如果有）和任何后续元素向右移动（将一个元素添加到其索引中）
+     *
+     * @param index index at which the specified element is to be inserted
+     * @param element element to be inserted
+     * @throws IndexOutOfBoundsException {@inheritDoc}
+     */
+    public void add(int index, E element) {
+        //检查index是否合法
+        rangeCheckForAdd(index);
+
+        //elementData素组容量增加、modCount增加
+        ensureCapacityInternal(size + 1);  // Increments modCount!!
+        
+        //将index及其后面的元素全部右移一位
+        System.arraycopy(elementData, index, elementData, index + 1,
+                size - index);
+        //index位置放新的element
+        elementData[index] = element;
+        size++;
+    }
+
+    /**
+     * A version of rangeCheck used by add and addAll.
+     * add 和 addAll 用来检查区间的版本
+     */
+    private void rangeCheckForAdd(int index) {
+        if (index > size || index < 0)
+            throw new IndexOutOfBoundsException(outOfBoundsMsg(index));
+    }
+
+    /**
+     * Replaces the element at the specified position in this list with
+     * the specified element.
+     * 将该list的指定位置的元素替换为指定元素
+     *
+     * @param index index of the element to replace
+     * @param element element to be stored at the specified position
+     * @return the element previously at the specified position
+     * @throws IndexOutOfBoundsException {@inheritDoc}
+     */
+    public E set(int index, E element) {
+        //检查index
+        rangeCheck(index);
+
+        //获取该位置的原始元素，用于返回
+        E oldValue = elementData(index);
+        //替换index位置的元素
+        elementData[index] = element;
+        return oldValue;
+    }
 }
 ```
+总结：
+1. 数组容量首次扩容到DEFAULT_CAPACITY（10），后续size>=数组容量后，扩容到当前容量的1.5倍。
+2. 扩容、按索引添加，都会存在着数组拷贝。
+
+##三： get、remove
+```java
+public class ArrayList<E> extends AbstractList<E>
+        implements List<E>, RandomAccess, Cloneable, java.io.Serializable
+{
+
+    /**
+     * Returns the element at the specified position in this list.
+     * 返回该list中指定位置的元素。
+     * @param  index index of the element to return
+     * @return the element at the specified position in this list
+     * @throws IndexOutOfBoundsException {@inheritDoc}
+     */
+    public E get(int index) {
+        rangeCheck(index);
+
+        return elementData(index);
+    }
+
+    /**
+     * Checks if the given index is in range.  If not, throws an appropriate
+     * runtime exception.  This method does *not* check if the index is
+     * negative: It is always used immediately prior to an array access,
+     * which throws an ArrayIndexOutOfBoundsException if index is negative.
+     * 检查给定的index是否在区间中。如果不在则抛出适当的运行时异常。
+     * 该方法不检查负数：它总是在数组访问之前使用，如果索引为负，则会抛出ArrayIndexOutOfBoundsException。
+     */
+    private void rangeCheck(int index) {
+        if (index >= size)
+            throw new IndexOutOfBoundsException(outOfBoundsMsg(index));
+    }
+
+    E elementData(int index) {
+        return (E) elementData[index];
+    }
+    
+    /**
+     * Removes the element at the specified position in this list.
+     * Shifts any subsequent elements to the left (subtracts one from their
+     * indices).
+     * 删除该list中指定位置的元素。将任何后续元素向左移动（从其索引中减去一个）。
+     *
+     * @param index the index of the element to be removed
+     * @return the element that was removed from the list
+     * @throws IndexOutOfBoundsException {@inheritDoc}
+     */
+    public E remove(int index) {
+        //检查index是否合法
+        rangeCheck(index);
+
+        //增加结构性修改次数
+        modCount++;
+
+        //获取到index的元素用于返回
+        E oldValue = elementData(index);
+
+        //numMoved表示需要移动的元素个数，如果说remove的是最后一个，则不需要移动
+        int numMoved = size - index - 1;
+        if (numMoved > 0)
+            //index后面的元素全部往前移动一位
+            System.arraycopy(elementData, index+1, elementData, index,
+                    numMoved);
+        //最后一位置空
+        elementData[--size] = null; // clear to let GC do its work
+
+        return oldValue;
+    }
+
+}
+```
+总结：
+1. get的效率很高，直接数组索引访问。
+2. remove就又涉及到数组拷贝的动作了。

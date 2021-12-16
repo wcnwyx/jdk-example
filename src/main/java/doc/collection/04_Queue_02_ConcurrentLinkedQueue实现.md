@@ -103,9 +103,9 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
      *   reached in O(1) time from tail, but tail is merely an
      *   optimization - it can always be reached in O(N) time from
      *   head as well.
-     * 正好有一个（最后一个）节点的下一个引用为空，在入队时被 CASed。 
-     * 最后一个节点可以在 O(1) 时间内从尾部到达，
-     * 但尾部只是一种优化——它也总是可以在 O(N) 时间内从头部到达。
+     *   正好有一个（最后一个）节点的下一个引用为空，在入队时被 CASed。 
+     *   最后一个节点可以在 O(1) 时间内从尾部到达，
+     *   但尾部只是一种优化——它也总是可以在 O(N) 时间内从头部到达。
      * - The elements contained in the queue are the non-null items in
      *   Nodes that are reachable from head.  CASing the item
      *   reference of a Node to null atomically removes it from the
@@ -114,11 +114,11 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
      *   head to advance.  A dequeued Node may remain in use
      *   indefinitely due to creation of an Iterator or simply a
      *   poll() that has lost its time slice.
-     * 队列中包含的元素是节点中可从头访问的非空项目。 
-     * 将节点的项引用 CAS 为 null 会自动将其从队列中删除。 
-     * 即使在导致 head 推进的并发修改的情况下，head 的所有元素的可达性也必须保持真实。 
-     * 由于创建了一个迭代器或只是一个丢失了时间片的 poll()，
-     * 出列的节点可能会无限期地继续使用。
+     *   队列中包含的元素是节点中可从头访问的非空项目。 
+     *   将节点的项引用 CAS 为 null 会自动将其从队列中删除。 
+     *   即使在导致 head 推进的并发修改的情况下，head 的所有元素的可达性也必须保持真实。 
+     *   由于创建了一个迭代器或只是一个丢失了时间片的 poll()，
+     *   出列的节点可能会无限期地继续使用。
      *
      * The above might appear to imply that all Nodes are GC-reachable
      * from a predecessor dequeued Node.  That would cause two problems:
@@ -135,6 +135,10 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
      * be of the kind understood by the GC.  We use the trick of
      * linking a Node that has just been dequeued to itself.  Such a
      * self-link implicitly means to advance to head.
+     * 然而，只有未删除的节点才需要能够从出列的节点访问，
+     * 并且访问性不一定必须是GC所理解的那种。
+     * 我们使用的技巧是将刚出列的节点链接到自身。
+     * 这样的自我链接隐含着向头部前进的意思。
      *
      * Both head and tail are permitted to lag.  In fact, failing to
      * update them every time one could is a significant optimization
@@ -142,9 +146,13 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
      * documentation for that class), we use a slack threshold of two;
      * that is, we update head/tail when the current pointer appears
      * to be two or more steps away from the first/last node.
+     * 头部和尾部都允许滞后。事实上，不能每次都更新它们是一个显著的优化（少量的CASes）。
+     * 与LinkedTransferQueue（参见该类的内部文档）一样，我们使用两个松弛阈值；
+     * 也就是说，当当前指针距离第一个/最后一个节点两步或更多步时，我们更新head/tail。
      *
      * Since head and tail are updated concurrently and independently,
      * it is possible for tail to lag behind head (why not)?
+     * 由于head和tail是同时独立更新的，tail有可能落后于head（为什么不）？
      *
      * CASing a Node's item reference to null atomically removes the
      * element from the queue.  Iterators skip over Nodes with null
@@ -153,11 +161,17 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
      * to be successfully removed by two concurrent operations.  The
      * method remove(Object) also lazily unlinks deleted Nodes, but
      * this is merely an optimization.
+     * 将节点的项引用封装为null会自动从队列中删除元素。迭代器跳过包含空项的节点。
+     * 该类以前的实现在poll()和remove(Object) 之间存在竞争，
+     * 相同的元素似乎可以通过两个并发操作成功删除。
+     * 方法remove(Object) 也会延迟地取消已删除节点的链接，但这只是一种优化。
      *
      * When constructing a Node (before enqueuing it) we avoid paying
      * for a volatile write to item by using Unsafe.putObject instead
      * of a normal write.  This allows the cost of enqueue to be
      * "one-and-a-half" CASes.
+     * 在构造节点时（在排队之前），我们通过使用不安全的方法避免为易变的写入项付费。
+     * putObject不是普通写入。这使得排队的成本为“一个半”CASes。
      *
      * Both head and tail may or may not point to a Node with a
      * non-null item.  If the queue is empty, all items must of course
@@ -165,6 +179,9 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
      * Node with null item.  Both head and tail are only updated using
      * CAS, so they never regress, although again this is merely an
      * optimization.
+     * 头部和尾部都可能指向或不指向具有非空项的节点。如果队列为空，则所有项目当然必须为空。
+     * 创建时，head和tail都引用带有null项的虚拟节点。
+     * 头部和尾部都只使用CAS进行更新，所以它们永远不会回归，尽管这只是一个优化。
      */
 
     private static class Node<E> {
@@ -209,6 +226,41 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
                 throw new Error(e);
             }
         }
+    }
+
+    /**
+     * A node from which the first live (non-deleted) node (if any)
+     * can be reached in O(1) time.
+     * Invariants:
+     * - all live nodes are reachable from head via succ()
+     * - head != null
+     * - (tmp = head).next != tmp || tmp != head
+     * Non-invariants:
+     * - head.item may or may not be null.
+     * - it is permitted for tail to lag behind head, that is, for tail
+     *   to not be reachable from head!
+     */
+    private transient volatile Node<E> head;
+
+    /**
+     * A node from which the last node on list (that is, the unique
+     * node with node.next == null) can be reached in O(1) time.
+     * Invariants:
+     * - the last node is always reachable from tail via succ()
+     * - tail != null
+     * Non-invariants:
+     * - tail.item may or may not be null.
+     * - it is permitted for tail to lag behind head, that is, for tail
+     *   to not be reachable from head!
+     * - tail.next may or may not be self-pointing to tail.
+     */
+    private transient volatile Node<E> tail;
+
+    /**
+     * Creates a {@code ConcurrentLinkedQueue} that is initially empty.
+     */
+    public ConcurrentLinkedQueue() {
+        head = tail = new Node<E>(null);
     }
 }
 ```

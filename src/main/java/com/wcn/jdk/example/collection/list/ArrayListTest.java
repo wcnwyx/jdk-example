@@ -18,5 +18,7 @@ public class ArrayListTest {
         });
 
         list.forEach((e)->{System.out.println(e);});
+
+        System.out.println("1234567".substring(6,7));
     }
 }

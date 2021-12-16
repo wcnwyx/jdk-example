@@ -146,7 +146,7 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
      * documentation for that class), we use a slack threshold of two;
      * that is, we update head/tail when the current pointer appears
      * to be two or more steps away from the first/last node.
-     * 头部和尾部都允许滞后。事实上，不能每次都更新它们是一个显著的优化（少量的CASes）。
+     * 头部和尾部都允许滞后。事实上，不每次都更新它们是一个显著的优化（少量的CASes）。
      * 与LinkedTransferQueue（参见该类的内部文档）一样，我们使用两个松弛阈值；
      * 也就是说，当当前指针距离第一个/最后一个节点两步或更多步时，我们更新head/tail。
      *

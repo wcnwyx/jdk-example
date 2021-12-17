@@ -1,3 +1,6 @@
+#LinkedList源码分析
+
+##一： 类注释及内部变量预览
 ```java
 /**
  * An unbounded thread-safe {@linkplain Queue queue} based on linked nodes.
@@ -258,9 +261,178 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
 
     /**
      * Creates a {@code ConcurrentLinkedQueue} that is initially empty.
+     * head和tail都指向了一个空节点。
      */
     public ConcurrentLinkedQueue() {
         head = tail = new Node<E>(null);
     }
+
+    //CAS操作更新tail
+    private boolean casTail(Node<E> cmp, Node<E> val) {
+        return UNSAFE.compareAndSwapObject(this, tailOffset, cmp, val);
+    }
+
+    //CAS操作更新head
+    private boolean casHead(Node<E> cmp, Node<E> val) {
+        return UNSAFE.compareAndSwapObject(this, headOffset, cmp, val);
+    }
+
+}
+```
+总结：
+1. 基于双向链表实现的。
+2. 线程安全的，非阻塞算法（通过CAS操作实现）。
+3. 不允许为null。
+4. 迭代器不会抛出ConcurrentModificationException。
+5. 批量操作addAll、removeAll、retainAll等不能保证以原子方式执行。
+
+实现注意点（先有这个概念，后面源码就方便看了）：
+1. tail和head的cas更新操作允许滞后。
+    - 1.1 比如说：不是每次offer都会更新tail节点。
+    - 1.2 tail指针当前位置距离最后一个节点相隔两个或以上节点时，才更新tail（head也是类似）。
+    - 1.3 cas的更细操作是消耗性能的，这样子可以少几次cas操作，是一种优化吧。
+2. 因为1的存在，所以tail并不代表着真实的最后一个节点。
+    - 2.1 如果tail.next为空，则tail是最后一个节点。
+    - 2.2 如果tail.next不为空，则tail不是最后一个节点。
+    - 2.3 只有一个节点的next为空，则该节点才是最后一个节点。
+3. node.item为null，则表示该node已从链表中取下。
+4. node.next==node，则表示该node已从链表中取下。
+
+
+##二 offer逻辑
+做以下思考再看源码会很容易理解。  
+双向链表的入链逻辑无非两步，如果上锁，直接执行这两步就好：
+1. tail.setNext(newNode) 将尾节点tail的next属性设置为newNode节点。
+2. setTail(newNode) 将tail指向新节点newNode。
+
+但是因为此类的特殊情况，导致情况就复杂了：
+1. tail并不表示真正的最后一个节点。只有node.next==null 才表示是最后一个节点。
+   所以要从tail往后偏移循环，找到真正的最后一个节点。偏移的过程中就可能会出现异常情况：
+   比如说，偏移到了一个已经被下链的节点（node.next=node，此类的特点，节点的next指向自身表示下链），
+   一路next循环获取节点，结果发现某个节点不再链表中了。
+2. 此类是非阻塞的，但是线程安全，通过cas操作来处理的，多线程情况下，tail.casNext(null,newNode)是可能失败的
+
+```java
+public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
+        implements Queue<E>, java.io.Serializable {
+    
+    /**
+     * Inserts the specified element at the tail of this queue.
+     * As the queue is unbounded, this method will never return {@code false}.
+     * 将指定的元素插入到queue的尾部。因为queue是无界的，此方法永远不会返回false。
+     *
+     * @return {@code true} (as specified by {@link Queue#offer})
+     * @throws NullPointerException if the specified element is null
+     */
+    public boolean offer(E e) {
+        checkNotNull(e);
+        final Node<E> newNode = new Node<E>(e);
+
+        for (Node<E> t = tail, p = t;;) {
+            //t固定为开始循环时的tail指向的一个Node，过程中tail指针可能会被其他线程更新为其它节点
+            //p初始是tail指针位置，后续往next偏移或者根据不同的情况直接偏移到新的tail或者是head。
+            //q固定为p的next节点。
+            Node<E> q = p.next;
+            if (q == null) {
+                // p is last node
+                // 一个节点的next为null，则表示是最后一个节点了。将新节点cas更新到p.next
+                if (p.casNext(null, newNode)) {
+                    // Successful CAS is the linearization point
+                    // for e to become an element of this queue,
+                    // and for newNode to become "live".
+                    //新节点成功cas更新到了p.next上
+                    
+                    if (p != t) // hop two nodes at a time
+                        // 先反过来想p=t表示什么，p初始定义是p=t，是相等的，不相等了说明p往next偏移了
+                        // tail不是最后一个节点的时候（tail.next!=null），就需要往后偏移。
+                        // 所以这里就会导致一次更新tail，一个不更新tail。体现了tail的更新是滞后的。
+                        casTail(t, newNode);  // Failure is OK. 为啥失败也无所谓呢？因为tail本身就不表示最后一个节点
+                    return true;
+                }
+                // Lost CAS race to another thread; re-read next
+                // 如果走到了这里，说明两个线程再同时执行p.casNext(null, newNode)，
+                //一个线程成功，另一个失败，则失败的线程就重新循环，重新读取 q=p.next
+            }
+            else if (p == q)
+                // We have fallen off list.  If tail is unchanged, it
+                // will also be off-list, in which case we need to
+                // jump to head, from which all live nodes are always
+                // reachable.  Else the new tail is a better bet.
+                // p==q表示自己的next指向了自己，也就表示该节点已从链表中取下（poll中涉及到，后面再看）。
+                // 但是这时候也需要将新节点加入到链表，所以一种方法是从tail重新偏移处理，一种是从头head开始偏移处理。
+                // 1. 如果重新获取tail（t=tail）和循环之前的t不一样，说明有了新的tail，则从新的tail开始偏移处理。
+                //    那为什么不怕新的tail也会被下链呢？无所谓，那样会再次走到这里再次处理。
+                // 2. 如果说一样，则表示tail节点也可能被下链了，则从头head开始偏移，因为任何节点都可以从头head一路next访问到。
+                p = (t != (t = tail)) ? t : head;
+            else
+                // Check for tail updates after two hops.
+                // 这里说明tail.next不为空，那么p就往后偏移。但是偏移有两种可能：
+                // 1：偏移到自身的next节点q。
+                // 2: 直接偏移到新的tail指针位置。为啥要这种呢？因为当前的p节点离目前真实的tail相差太远了，
+                // 如果每次next一个一个偏移也可以偏移过去，但是不如一次性偏移到新的tail来得快。
+                p = (p != t && t != (t = tail)) ? t : q;
+        }
+    }
+}
+```
+
+offer实现步骤：  
+1. 从tail开始**循环**向后偏移，寻找链表中**真正的**最后一个节点（node.next==null）。
+2. 循环的过程中发现某一个节点的next指向了自身（node.next==node）,说明该node被下链了。
+   - 2.1 t!=(t=tail)表示目前真实的tail指向的节点和开始循环时的tail节点不相等，表示tail已被更新，则从新的tail再次偏移循环。
+   - 2.2 t=(t=tail)表示开始循环是的tail节点也可能下链了，则从头head再开始偏移循环。
+3. 循环的过程中发现t!=(t=tail)，则直接从新的tail开始循环（依次循环next也可以达到，但是可能会多循环好多次）。
+4. 找到了**真正的**最后一个节点后，cas更新入链，node.casNext(null, newNode)。
+5. casTail更新tail指针，隔一次更新一次，并不每次offer都更新，少一次cas更新，性能会更好一点。
+
+
+
+##三：poll逻辑
+通过offer考虑到这些相同的情况，poll的逻辑也很类似。  
+```java
+public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
+        implements Queue<E>, java.io.Serializable {
+   
+    public E poll() {
+      restartFromHead:
+      //双层循环，因为内部的循环可能也会发现偏移到了已下链的节点，需要再次从头head开始循环
+      for (;;) {
+         //从头head节点开始循环，找到真实的第一个节点。本类的特性（head允许滞后更新，head不一定表示真实的第一个节点）
+         for (Node<E> h = head, p = h, q;;) {
+            E item = p.item;
+            
+            // item!=null 表示是真实的第一个节点，然后将其item cas更新为null表示下链。
+            if (item != null && p.casItem(item, null)) {
+               // Successful CAS is the linearization point
+               // for item to be removed from this queue.
+               if (p != h) // hop two nodes at a time
+                   //隔一次更新依次head，也体现出了head的更新是滞后的。
+                   // p.next==null 表示已经是最后一个节点了，所以将头更新为p，不能将头更新为null。
+                  updateHead(h, ((q = p.next) != null) ? q : p);
+               return item;
+            }
+            else if ((q = p.next) == null) {
+                //p.next==null 说明该节点是最后一个节点了，到最后了。
+               updateHead(h, p);
+               return null;
+            }
+            else if (p == q)
+                //节点的next指向了自身，表示该节点已经被下链，则重新从头head开始循环。
+               continue restartFromHead;
+            else
+                //将p向后偏移到自己的next节点，然后再次循环
+               p = q;
+         }
+      }
+   }
+
+   /**
+    * Tries to CAS head to p. If successful, repoint old head to itself
+    * as sentinel for succ(), below.
+    */
+   final void updateHead(Node<E> h, Node<E> p) {
+      if (h != p && casHead(h, p))
+         h.lazySetNext(h);
+   }
 }
 ```

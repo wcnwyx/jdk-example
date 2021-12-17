@@ -27,8 +27,11 @@ public class ConcurrentLinkedQueueTest<E> {
             public void run() {
                 queue.offer(21);
                 queue.offer(22);
-                queue.offer(23);
-                queue.offer(24);
+//                queue.offer(23);
+//                queue.offer(24);
+                System.out.println("pool:"+queue.poll());
+                System.out.println("pool:"+queue.poll());
+                System.out.println("pool:"+queue.poll());
                 System.out.println(Thread.currentThread().getName()+" offer success");
             }
         }, "thread2");
@@ -71,6 +74,31 @@ public class ConcurrentLinkedQueueTest<E> {
             else
                 // Check for tail updates after two hops.
                 p = (p != t && t != (t = tail)) ? t : q;
+        }
+    }
+
+    public E poll() {
+        restartFromHead:
+        for (;;) {
+            for (ConcurrentLinkedQueueTest.Node<E> h = head, p = h, q;;) {
+                E item = p.item;
+
+                if (item != null && p.casItem(item, null)) {
+                    // Successful CAS is the linearization point
+                    // for item to be removed from this queue.
+                    if (p != h) // hop two nodes at a time
+                        updateHead(h, ((q = p.next) != null) ? q : p);
+                    return item;
+                }
+                else if ((q = p.next) == null) {
+                    updateHead(h, p);
+                    return null;
+                }
+                else if (p == q)
+                    continue restartFromHead;
+                else
+                    p = q;
+            }
         }
     }
 
@@ -119,6 +147,15 @@ public class ConcurrentLinkedQueueTest<E> {
                 throw new Error(e);
             }
         }
+    }
+
+    /**
+     * Tries to CAS head to p. If successful, repoint old head to itself
+     * as sentinel for succ(), below.
+     */
+    final void updateHead(ConcurrentLinkedQueueTest.Node<E> h, ConcurrentLinkedQueueTest.Node<E> p) {
+        if (h != p && casHead(h, p))
+            h.lazySetNext(h);
     }
 
     private boolean casTail(ConcurrentLinkedQueueTest.Node<E> cmp, ConcurrentLinkedQueueTest.Node<E> val) {

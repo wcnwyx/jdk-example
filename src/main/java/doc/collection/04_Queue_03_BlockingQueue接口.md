@@ -82,7 +82,7 @@
  * occasional use, such as when a queued message is cancelled.
  * BlockingQueue实现主要用于生产者-消费者队列，但还支持Collection接口。
  * 因此，例如，可以使用remove（x）从队列中删除任意元素。
- * 然而，这样的操作通常不是非常搞笑地执行的，并且仅用于偶尔使用，例如当队列消息被取消时。
+ * 然而，这样的操作通常不是非常高效地执行的，并且仅用于偶尔使用，例如当队列消息被取消时。
  *
  * <p>{@code BlockingQueue} implementations are thread-safe.  All
  * queuing methods achieve their effects atomically using internal

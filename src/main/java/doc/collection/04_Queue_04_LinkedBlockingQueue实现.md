@@ -1,3 +1,6 @@
+#LinkedBlockingList源码分析
+
+##一： 类注释及内部变量预览
 ```java
 /**
  * An optionally-bounded {@linkplain BlockingQueue blocking queue} based on
@@ -219,9 +222,12 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
     }
 }
 ```
+总结：
+1. 基于单向链表实现的阻塞队列（BlockingQueue）。
+2. 阻塞是采用Condition的await相关方法来实现的。
 
-##二offer和poll逻辑
-offer和poll也是Queue接口的定义。他两时不阻塞的。   
+##二： offer和poll逻辑
+offer和poll也是Queue接口的定义。他两是不阻塞的，条件不满足就直接返回false了。   
 主要是对比下ConcurrentLinkedQueue这种不使用锁而是使用CAS保证线程安全的处理。
 ```java
 public class LinkedBlockingQueue<E> extends AbstractQueue<E>
@@ -282,6 +288,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
         return c >= 0;
     }
 
+    //整体和offer的逻辑差不多
     public E poll() {
         final AtomicInteger count = this.count;
         if (count.get() == 0)
@@ -312,3 +319,127 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
     }
 }
 ```
+总结：  
+1. 相对于ConcurrentLinkedQueue的offer和poll逻辑简单太多，主要是使用了Lock。
+2. 其实这两个方法也不能说是不阻塞的，只是说offer在队列满的时候、或者poll在队列空的时候会立即返回，不会等待在Condition上。
+3. 严格来说，里面使用了ReentrantLock.lock()，多线程抢锁的时候也会阻塞一下，只不过这里都是内存运算，即使排队等待锁的获取，也不会有阻塞的感觉。
+
+##三： put和take逻辑
+阻塞，但是可以中断的。   
+```java
+public class LinkedBlockingQueue<E> extends AbstractQueue<E>
+        implements BlockingQueue<E>, java.io.Serializable {
+
+    /**
+     * Inserts the specified element at the tail of this queue, waiting if
+     * necessary for space to become available.
+     * 在该队列的尾部插入指定的元素，如有必要，等待空间变为可用。
+     *
+     * @throws InterruptedException {@inheritDoc}
+     * @throws NullPointerException {@inheritDoc}
+     */
+    public void put(E e) throws InterruptedException {
+        if (e == null) throw new NullPointerException();
+        int c = -1;
+        Node<E> node = new Node<E>(e);
+        final ReentrantLock putLock = this.putLock;
+        final AtomicInteger count = this.count;
+        //这里为什么使用lockInterruptibly呢？怕获取锁时间过长？
+        putLock.lockInterruptibly();
+        try {
+            //容量满了，就在Condition上await，
+            // 这里要使用while循环哦，因为Condition可能会出现虚假唤醒，接口注释里特别说明的。
+            while (count.get() == capacity) {
+                notFull.await();
+            }
+            enqueue(node);
+            c = count.getAndIncrement();
+            if (c + 1 < capacity)
+                notFull.signal();
+        } finally {
+            putLock.unlock();
+        }
+        if (c == 0)
+            signalNotEmpty();
+    }
+
+    public E take() throws InterruptedException {
+        E x;
+        int c = -1;
+        final AtomicInteger count = this.count;
+        final ReentrantLock takeLock = this.takeLock;
+        takeLock.lockInterruptibly();
+        try {
+            while (count.get() == 0) {
+                notEmpty.await();
+            }
+            x = dequeue();
+            c = count.getAndDecrement();
+            if (c > 1)
+                notEmpty.signal();
+        } finally {
+            takeLock.unlock();
+        }
+        if (c == capacity)
+            signalNotFull();
+        return x;
+    }
+}
+```
+1. put和take在不满足容量条件的情况下，会await在Condition上，等带别的线程再次添加或删除元素后发送信号通知。
+2. await时要使用while循环判断，因为Condition是会出现虚假唤醒的情况。
+3. 这里为什么要用lockInterruptibly呢？有什么特殊用意吗？
+
+##四： remove
+注释里解释说该方法不高效，不建议高频率使用。  
+```java
+public class LinkedBlockingQueue<E> extends AbstractQueue<E>
+        implements BlockingQueue<E>, java.io.Serializable {
+
+    public boolean remove(Object o) {
+        if (o == null) return false;
+        // 这里使用的是fullLock，将putLock和takeLock全部锁住，队列无法进行添加和删除
+        fullyLock();
+        try {
+            //链表循环，从头到尾循环找，效率可想而知
+            for (Node<E> trail = head, p = trail.next;
+                 p != null;
+                 trail = p, p = p.next) {
+                if (o.equals(p.item)) {
+                    unlink(p, trail);
+                    return true;
+                }
+            }
+            return false;
+        } finally {
+            fullyUnlock();
+        }
+    }
+
+    /**
+     * Locks to prevent both puts and takes.
+     */
+    void fullyLock() {
+        putLock.lock();
+        takeLock.lock();
+    }
+
+    /**
+     * Unlocks to allow both puts and takes.
+     */
+    void fullyUnlock() {
+        takeLock.unlock();
+        putLock.unlock();
+    }
+}
+```
+总结：  
+1. 其实不止remove方法会fullLock，contains、toArray、toString、clear都会fullLock，所以使用的时候要注意。
+2. contains其实也会进行链表查询，效率也是很慢的。
+
+
+##五：其它
+1. 带超时时间的offer和poll也是一样的逻辑，只是使用的awaitNanos(long nanosTimeout)带超时的等待方法。
+2. 接口里描述的addAll这种批量操作不保证原子性，因为本类并没有实现addAll，是使用的AbstractQueue的addAll方法，
+循环调用的offer方法，所以可能其中一个元素报错导致后续都不再添加。
+

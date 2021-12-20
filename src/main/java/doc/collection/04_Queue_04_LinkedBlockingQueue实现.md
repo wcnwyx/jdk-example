@@ -225,6 +225,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
 总结：
 1. 基于单向链表实现的阻塞队列（BlockingQueue）。
 2. 阻塞是采用Condition的await相关方法来实现的。
+3. 链表的头head表示插入时间最久的元素，last表示最新插入的元素。
 
 ##二： offer和poll逻辑
 offer和poll也是Queue接口的定义。他两是不阻塞的，条件不满足就直接返回false了。   
@@ -322,7 +323,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
 总结：  
 1. 相对于ConcurrentLinkedQueue的offer和poll逻辑简单太多，主要是使用了Lock。
 2. 其实这两个方法也不能说是不阻塞的，只是说offer在队列满的时候、或者poll在队列空的时候会立即返回，不会等待在Condition上。
-3. 严格来说，里面使用了ReentrantLock.lock()，多线程抢锁的时候也会阻塞一下，只不过这里都是内存运算，即使排队等待锁的获取，也不会有阻塞的感觉。
+3. 严格来说，里面使用了ReentrantLock.lock()，多线程抢锁的时候也会阻塞一下，尤其是remove这种方法可能会导致锁获取阻塞时间过长。
 
 ##三： put和take逻辑
 阻塞，但是可以中断的。   
@@ -344,7 +345,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
         Node<E> node = new Node<E>(e);
         final ReentrantLock putLock = this.putLock;
         final AtomicInteger count = this.count;
-        //这里为什么使用lockInterruptibly呢？怕获取锁时间过长？
+        //这里为什么使用lockInterruptibly呢？offer用的是lock()，怕获取锁时间过长？
         putLock.lockInterruptibly();
         try {
             //容量满了，就在Condition上await，
@@ -388,7 +389,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
 ```
 1. put和take在不满足容量条件的情况下，会await在Condition上，等带别的线程再次添加或删除元素后发送信号通知。
 2. await时要使用while循环判断，因为Condition是会出现虚假唤醒的情况。
-3. 这里为什么要用lockInterruptibly呢？有什么特殊用意吗？
+3. 这里为什么要用**lockInterruptibly**呢？而offer方法使用的是**lock()**? 看过后面remove就大概知道了。
 
 ##四： remove
 注释里解释说该方法不高效，不建议高频率使用。  
@@ -435,8 +436,13 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
 ```
 总结：  
 1. 其实不止remove方法会fullLock，contains、toArray、toString、clear都会fullLock，所以使用的时候要注意。
-2. contains其实也会进行链表查询，效率也是很慢的。
-
+2. remove、contains方法内部涉及到链表搜索逻辑，如果队列中数据量很大，效率也是很慢的。
+3. 看到这里，就会知道为什么offer必须使用lock()，而put必须使用lockInterruptibly()了，因为remove这种方法会持有锁过长时间。
+    - 3.1 offer的定义就是要一直等待的，不能中断不允许抛出**InterruptedException**，所以即使是阻塞在获取锁的过程中，
+      而不是await在Condition上时（因为队列满），也不能响应中断，所以只能使用lock()。
+    - 3.2 put的方法注释是明确支持中断的，同样的如果说是阻塞在获取锁的过程中，lock就不能中断了，只能使用lockInterruptibly()。
+    - 3.3 其实即使没有remove这种持有锁时间过长的方法，如果严格按照put、offer方法的定义也是必须要这么使用的，只是会感觉既然不会
+   长时间阻塞到锁的获取上，put也是可以使用lock()的，只是可能出现中断的响应稍微不及时点。
 
 ##五：其它
 1. 带超时时间的offer和poll也是一样的逻辑，只是使用的awaitNanos(long nanosTimeout)带超时的等待方法。

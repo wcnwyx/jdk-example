@@ -146,12 +146,15 @@
  * <li> reduce: Accumulate each element.  The supplied reduction
  * function cannot rely on ordering (more formally, it should be
  * both associative and commutative).  There are five variants:
+ * reduce：累加每个元素。 提供的归约函数不能依赖于排序（更正式地说，它应该是结合的和可交换的）。 
+ * 有五种变体：
  *
  * <ul>
  *
  * <li> Plain reductions. (There is not a form of this method for
  * (key, value) function arguments since there is no corresponding
  * return type.)</li>
+ * 
  *
  * <li> Mapped reductions that accumulate the results of a given
  * function applied to each element.</li>

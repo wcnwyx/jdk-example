@@ -6,8 +6,8 @@ import java.util.concurrent.locks.ReentrantLock;
 public class ReentrantLockTest {
 
     public static void main(String[] args) {
-//        normal();
-        testCancel();
+        normal();
+//        testCancel();
     }
 
     public static void testCancel(){

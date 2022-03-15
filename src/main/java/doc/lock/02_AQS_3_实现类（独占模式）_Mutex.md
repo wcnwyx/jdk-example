@@ -38,6 +38,7 @@ class Mutex implements Lock, java.io.Serializable {
         protected boolean tryRelease(int releases) {
             assert releases == 1; // Otherwise unused
             if (getState() == 0) throw new IllegalMonitorStateException();//如果当前状态是0，表示没有锁定，则抛出异常
+           //其实这里应该再次判断下持有者是否是当前线程，防止A获取了，但是B来释放了。此类只是注释中的一个简单示例而已。
             setExclusiveOwnerThread(null);//当前持有锁的线程设为null
             setState(0);//状态更新为0
             return true;

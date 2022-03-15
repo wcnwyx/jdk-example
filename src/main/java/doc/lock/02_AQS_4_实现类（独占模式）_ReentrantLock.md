@@ -38,7 +38,7 @@
  * honor the fairness setting. It will succeed if the lock
  * is available even if other threads are waiting.
  * 
- * 此类的构造方法接收一个fairness的参数。当设置true是，在争用的情况下，
+ * 此类的构造方法接收一个fairness的参数。当设置true时，在争用的情况下，
  * 锁倾向于授予对等待时间最长的线程的访问权。否则，此锁不保证任何特定的访问顺序。
  * 与使用默认设置的程序相比，使用由多个线程访问的公平锁的程序可能显示较低的总体吞吐量（即较慢；通常较慢），
  * 但在获得锁和保证无饥饿的时间上差异较小。但是请注意，锁的公平性并不能保证线程调度的公平性。

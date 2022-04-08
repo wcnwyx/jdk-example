@@ -1,8 +1,6 @@
 package com.wcn.jdk.example.io.bio;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -18,15 +16,16 @@ public class ServerSocketTest {
             System.out.println("socket income:"+finalSocket.getInetAddress()+" port:"+finalSocket.getPort());
             Thread thread= new Thread(()->{
                 try {
-                    InputStream is = finalSocket.getInputStream();
-                    OutputStream outs = finalSocket.getOutputStream();
-                    int ret = -1;
-                    while((ret=is.read())!=-1){//read会产生阻塞
-                        System.out.println("receive msg:"+(char)ret);
-                        outs.write(ret);
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(finalSocket.getInputStream()));
+                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(finalSocket.getOutputStream()));
+                    String msg = null;
+                    while((msg=reader.readLine())!=null){//read会产生阻塞
+                        System.out.println("receive msg:"+msg);
+                        writer.write("response_"+msg+"\r\n");
+                        writer.flush();
                     }
                     System.out.println("byte----"+finalSocket.getInetAddress()+" port:"+finalSocket.getPort());
-                    outs.write("bye".getBytes(StandardCharsets.UTF_8));
+                    writer.write("bye\r\n");
                     finalSocket.close();
                 } catch (IOException e) {
                     e.printStackTrace();

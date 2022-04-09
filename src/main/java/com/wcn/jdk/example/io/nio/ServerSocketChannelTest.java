@@ -12,8 +12,8 @@ import java.util.Set;
 
 public class ServerSocketChannelTest {
     public static void main(String[] args) throws Exception{
-        Selector selectorAccept = Selector.open();//用于注册accept事件
-        Selector selectorRead = Selector.open();//用于注册read事件
+        Selector selectorAccept = Selector.open();//单独用于注册accept事件
+        Selector selectorRead = Selector.open();//单独用于注册read事件
 
         ServerSocketChannel ssc = ServerSocketChannel.open();
         ssc.configureBlocking(false);//设置未非阻塞模式

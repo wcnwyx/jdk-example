@@ -14,7 +14,7 @@ public class ByteBufferTest {
         byteBuffer.putChar('2');
         System.out.println("put_"+byteBuffer+" "+ HexBin.encode(byteBuffer.array()));
 
-        //flip反转后，position未0，limit为position
+        //flip反转后，position为0，limit为position
         byteBuffer.flip();
         System.out.println("flip_"+byteBuffer+" "+ HexBin.encode(byteBuffer.array()));
 

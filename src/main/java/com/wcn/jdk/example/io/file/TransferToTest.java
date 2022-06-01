@@ -135,7 +135,6 @@ public class TransferToTest {
 
                     ServerSocketChannel serverSocketChannel1 = (ServerSocketChannel) key.channel();
                     SocketChannel socketChannel = serverSocketChannel1.accept();
-                    System.out.println("new socketChannel:"+socketChannel);
 
                     while(true){
                         fileChannel.transferTo(0, 10, socketChannel);

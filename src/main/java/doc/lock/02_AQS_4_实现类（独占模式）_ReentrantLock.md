@@ -192,10 +192,10 @@ public class ReentrantLock implements Lock, java.io.Serializable {
 }
 ```
 总结：
-1. ReentrantLock是一个和synchronized拥有相同行为和语义的可重入的互斥锁，但是又额外的功能。
+1. ReentrantLock是一个和synchronized拥有相同行为和语义的可重入的互斥锁，但是有额外的功能。
 2. 因为实现了Lock接口，所以拥有lock、tryLock、unlock等方法，但是这些方法都是通过内部AQS实现类实现的，后面细看。
 3. ReentrantLock支持公平和非公平两种模式,默认使用的是非公平模式。但是即使在公平的模式下，tryLock（）也会存在barging（乱撞）状况打破公平性。
-4. tryLock方法就体现出了AQS里的barging现象，barging可以提高吞吐量，为什么呢？如果说目前有多个线程再排队等待获取锁，然后锁释放了，
+4. tryLock方法就体现出了AQS里的barging现象，barging可以提高吞吐量，为什么呢？如果说目前有多个线程在排队等待获取锁，然后锁释放了，
   第一个等待的线程（thread1）被unpark并再次尝试获取锁，然后另外一个线程（thread20）第一次来获取锁执行tryLock，thread1虽然被unPark,
   但是不一定拥有cpu资源，或许不会立即执行，但是现在thread20正在执行，其拥有cpu资源，所以让thread20立即获得所，让thread1等一下反而会更好的利用cpu，
   反之，需要thread20让出cpu资源，thread1再等待获得cpu资源才可以获得所，浪费了cpu资源。
@@ -326,6 +326,12 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         }
     }
 
+    public boolean tryLock() {
+        //这里就体现了即使使用了公平模式，tryLock也是不公平的（调用的是nonfairTryAcquire),
+        //也对应上了nonfairTryAcquire方法为什么要写在父类Sync里，而不是写在NonfiirSync里
+        return sync.nonfairTryAcquire(1);
+    }
+  
     public boolean tryLock(long timeout, TimeUnit unit)
             throws InterruptedException {
         //通过AQS来实现

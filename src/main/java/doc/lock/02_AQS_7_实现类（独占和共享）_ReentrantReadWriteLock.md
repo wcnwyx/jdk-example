@@ -246,7 +246,7 @@ public class ReentrantReadWriteLock
         //返回以参数c 表示的共享锁保持数
         static int sharedCount(int c)    { return c >>> SHARED_SHIFT; }
         /** Returns the number of exclusive holds represented in count  */
-        //返回以计数参数c 表示的怕他锁保持数
+        //返回以计数参数c 表示的排它锁保持数
         static int exclusiveCount(int c) { return c & EXCLUSIVE_MASK; }
 
 

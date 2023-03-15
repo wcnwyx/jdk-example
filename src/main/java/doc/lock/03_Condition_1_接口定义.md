@@ -310,7 +310,7 @@ public interface Condition {
 1. Condition为Object的监视器方法（wait、notify和notifyAll）的扩展吧。核心就两个功能：等待、唤醒。
 2. Condition是和一个某种形式的锁关联的，操作之前必须持有该锁。
 3. 存在**虚假唤醒**的情况，一定要循环判断，防止虚假唤醒导致程序异常。
-4. 提供一下方法：
+4. 提供以下方法：
     - await() 等待，四种情况可以唤醒：signal、signalAll、interrupt、虚假唤醒
     - awaitUninterruptibly() 等待不支持中断，三种情况可以唤醒：signal、signalAll、虚假唤醒
     - awaitNanos(long nanosTimeout)、await(long time, TimeUnit unit)、awaitUntil(Date deadline)
